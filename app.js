@@ -950,14 +950,14 @@
         ctx.fillStyle = state.black;
         ctx.textAlign = "center";
         ctx.textBaseline = "alphabetic";
-        let routeSize = size * .30;
+        let routeSize = size * .34;
         do {
-            ctx.font = `700 ${routeSize}px ${FONT_LATIN}`;
+            ctx.font = `700 ${routeSize}px ${FONT_TLC}`;
             if (ctx.measureText(route).width <= size * .76) break;
             routeSize -= 1;
         } while (routeSize > size * .16);
         ctx.fillText(route, x + size / 2, y + size * .42, size * .78);
-        ctx.font = `700 ${size * .43}px ${FONT_LATIN}`;
+        ctx.font = `700 ${size * .46}px ${FONT_TLC}`;
         ctx.fillText(number, x + size / 2, y + size * .82);
         ctx.restore();
     }
