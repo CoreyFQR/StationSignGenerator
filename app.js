@@ -3,7 +3,8 @@
 
     const LINE_TWO_GREEN = "#8DBB14";
     const DIRECTION_BAND_RED = "#E2001A";
-    const FONT_CHINESE = "'Dream Han Sans W20', 'Microsoft YaHei', 'PingFang SC', sans-serif";
+    const FONT_CURRENT_CHINESE = "'Dream Han Sans W26', 'Microsoft YaHei', 'PingFang SC', sans-serif";
+    const FONT_SIDE_CHINESE = "'Dream Han Sans W20', 'Microsoft YaHei', 'PingFang SC', sans-serif";
     const FONT_JAPANESE = "'Yu Gothic', 'Hiragino Sans', 'Meiryo', sans-serif";
     const FONT_KOREAN = "'Malgun Gothic', 'Noto Sans KR', sans-serif";
     const FONT_LATIN = "'Arial', sans-serif";
@@ -247,13 +248,29 @@
 
     function positionColorPopover(editor, popover) {
         editor.classList.remove("open-above");
+        popover.style.removeProperty("top");
+        popover.style.removeProperty("left");
         if (window.matchMedia("(max-width: 620px)").matches) return;
-        const boundary = editor.closest(".inspector-panel")?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
+        const margin = 10;
+        const gap = 8;
+        const boundary = editor.closest(".inspector-panel")?.getBoundingClientRect()
+            || { top: 0, right: window.innerWidth, bottom: window.innerHeight, left: 0 };
         const editorRect = editor.getBoundingClientRect();
         const popoverRect = popover.getBoundingClientRect();
-        const lacksRoomBelow = popoverRect.bottom > boundary.bottom - 10;
-        const hasRoomAbove = editorRect.top - boundary.top >= popoverRect.height + 18;
-        editor.classList.toggle("open-above", lacksRoomBelow && hasRoomAbove);
+        const minimumLeft = Math.max(margin, boundary.left + margin);
+        const maximumLeft = Math.max(minimumLeft, Math.min(window.innerWidth - popoverRect.width - margin, boundary.right - popoverRect.width - margin));
+        const left = clamp(editorRect.right - popoverRect.width, minimumLeft, maximumLeft);
+        const minimumTop = Math.max(margin, boundary.top + margin);
+        const maximumBottom = Math.min(window.innerHeight - margin, boundary.bottom - margin);
+        const below = editorRect.bottom + gap;
+        const above = editorRect.top - popoverRect.height - gap;
+        const openAbove = below + popoverRect.height > maximumBottom && above >= minimumTop;
+        const top = openAbove
+            ? above
+            : clamp(below, minimumTop, Math.max(minimumTop, maximumBottom - popoverRect.height));
+        editor.classList.toggle("open-above", openAbove);
+        popover.style.left = `${Math.round(left)}px`;
+        popover.style.top = `${Math.round(top)}px`;
     }
 
     function syncColorEditor(editor, value) {
@@ -716,7 +733,7 @@
     function getSideStationShift(data, station, branch) {
         if (!data.showNumbering || !station.go || station.numberings.length < 2) return 0;
         const baseInset = branch ? 130 : 200;
-        const markerSize = branch ? 72 : 96;
+        const markerSize = branch ? 50 : 80;
         const markerGap = markerSize * .08;
         const textGap = branch ? 10 : 18;
         const edgeGap = branch ? 12 : 20;
@@ -920,12 +937,12 @@
         ctx.save();
         ctx.fillStyle = numbering.color;
         if (rounded) {
-            roundRectPath(ctx, x, y, size, size, size * .12);
+            roundRectPath(ctx, x, y, size, size, size * .10);
             ctx.fill();
         } else {
             ctx.fillRect(x, y, size, size);
         }
-        const inset = size * .12;
+        const inset = size * .10;
         ctx.globalCompositeOperation = "destination-out";
         ctx.fillRect(x + inset, y + inset, size - inset * 2, size - inset * 2);
         ctx.globalCompositeOperation = "source-over";
@@ -954,42 +971,48 @@
 
     function drawTlcAndNumberings(ctx, data, chinese, zhuyin, geometry) {
         if (!data.showNumbering || !data.current.numberings.length) return;
-        const gap = 10;
         const count = data.current.numberings.length;
-        const mainTop = chinese.top;
-        const mainHeight = Math.max(108, chinese.bottom - chinese.top);
+        const tlcX = Math.max(25, geometry.half - chinese.width / 2 - 80 - 183.6 * count);
+        const markerScale = data.current.showTlc && data.branchLeft && tlcX < geometry.branchStart - 50 ? 1.2 : 1.5;
+        const markerSize = 100 * markerScale;
+        const markerStep = 108 * markerScale;
 
         if (data.current.showTlc) {
-            const height = Math.max(mainHeight + 48, zhuyin.bottom - mainTop);
-            const codeHeight = Math.max(40, Math.min(54, height * .27));
-            const size = height - codeHeight - 10;
-            const groupWidth = count * size + (count + 1) * gap;
-            const x = Math.max(24, geometry.half - chinese.width / 2 - groupWidth - 70);
-            const group = document.createElement("canvas");
-            group.width = Math.ceil(groupWidth);
-            group.height = Math.ceil(height);
-            const groupCtx = group.getContext("2d");
-            groupCtx.fillStyle = state.black;
-            roundRectPath(groupCtx, 0, 0, groupWidth, height, Math.min(20, height * .12));
-            groupCtx.fill();
-            groupCtx.textAlign = "center";
-            groupCtx.font = `700 ${Math.min(38, codeHeight * .68)}px ${FONT_LATIN}`;
-            groupCtx.textBaseline = "alphabetic";
-            const tlcMetrics = groupCtx.measureText(data.current.tlc);
-            const tlcY = codeHeight / 2 + (tlcMetrics.actualBoundingBoxAscent - tlcMetrics.actualBoundingBoxDescent) / 2;
-            groupCtx.globalCompositeOperation = "destination-out";
-            groupCtx.fillStyle = "#000";
-            groupCtx.fillText(data.current.tlc, groupWidth / 2, tlcY, groupWidth - gap * 2);
-            groupCtx.globalCompositeOperation = "source-over";
+            const groupY = geometry.lineTop - 250;
+            const groupWidth = (108 * count + 8) * markerScale;
+            const groupHeight = 142 * markerScale;
+            ctx.save();
+            ctx.fillStyle = state.black;
+            roundRectPath(ctx, tlcX, groupY, groupWidth, groupHeight, 18 * markerScale);
+            ctx.fill();
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.fillStyle = "#000";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "alphabetic";
+            ctx.font = `700 ${32 * markerScale}px ${FONT_LATIN}`;
+            ctx.fillText(data.current.tlc, tlcX + groupWidth / 2, groupY + 30 * markerScale, groupWidth - 16 * markerScale);
+            ctx.restore();
             data.current.numberings.forEach((numbering, index) => {
-                paintNumbering(groupCtx, gap + index * (size + gap), codeHeight, size, numbering, true);
+                paintNumbering(
+                    ctx,
+                    tlcX + 8 * markerScale + markerStep * index,
+                    geometry.lineTop - (250 - 34 * markerScale),
+                    markerSize,
+                    numbering,
+                    true
+                );
             });
-            ctx.drawImage(group, x, mainTop);
         } else {
-            const size = mainHeight;
-            const groupWidth = count * size + (count - 1) * gap;
-            const x = Math.max(24, geometry.half - chinese.width / 2 - groupWidth - 70);
-            data.current.numberings.forEach((numbering, index) => drawNumbering(ctx, x + index * (size + gap), mainTop, size, numbering, true));
+            data.current.numberings.forEach((numbering, index) => {
+                drawNumbering(
+                    ctx,
+                    tlcX + 8 * markerScale + markerStep * index,
+                    geometry.lineTop - 250,
+                    markerSize,
+                    numbering,
+                    true
+                );
+            });
         }
     }
 
@@ -1011,9 +1034,9 @@
                     : geometry.half - currentEnglish.width / 2;
                 maxWidth = Math.max(140, isRight ? x - centerEdge - 40 : centerEdge - x - 40);
             }
-            const chineseSize = branch ? (station.go ? 64 : 58) : (station.go ? 82 : 72);
-            const englishStartSize = branch ? 44 : 60;
-            const englishY = branch ? Math.min(y + 88, geometry.height - 30) : y + 124;
+            const chineseSize = branch ? 60 : (station.go ? 80 : 70);
+            const englishStartSize = branch ? 40 : 55;
+            const englishY = branch ? y + 80 : geometry.lineBottom + 70;
             if (mode === "names") {
                 drawText(ctx, {
                     text: station.chinese,
@@ -1022,7 +1045,7 @@
                     maxWidth,
                     startSize: chineseSize,
                     minSize: 40,
-                    font: FONT_CHINESE,
+                    font: FONT_SIDE_CHINESE,
                     weight: "400",
                     align,
                     visualCenter: true,
@@ -1047,14 +1070,13 @@
                 fitMode: "condense"
             });
             if (data.showNumbering && station.go && station.numberings.length) {
-                const nSize = branch ? 72 : 96;
-                const numberingCenterY = englishY - englishStartSize * .28;
-                const numberingY = clamp(numberingCenterY - nSize / 2, 10, geometry.height - nSize - 10);
+                const nSize = branch ? 50 : 80;
+                const numberingY = branch ? y + 36 : geometry.lineBottom + 15;
                 const numberingGap = nSize * .08;
                 const numberingTextGap = branch ? 10 : 18;
                 const numberingBlockWidth = station.numberings.length * nSize
                     + Math.max(0, station.numberings.length - 1) * numberingGap;
-                const singleMarkerBase = branch ? 120 : 178;
+                const singleMarkerBase = branch ? 120 : 180;
                 const numberingX = station.numberings.length < 2
                     ? (isRight ? width - singleMarkerBase : singleMarkerBase - nSize * 1.08)
                     : (isRight ? x + numberingTextGap : x - numberingTextGap - numberingBlockWidth);
@@ -1076,8 +1098,8 @@
         if (!data.showCityMarks) return;
         const marks = data.cityMarks.slice(0, 4);
         marks.forEach((mark, index) => {
-            const size = 74;
-            const x = width - 150 - (marks.length - 1 - index) * 90;
+            const size = 80;
+            const x = width - 160 - (marks.length - 1 - index) * 100;
             const y = lineTop - 228;
             ctx.save();
             ctx.lineWidth = 4;
@@ -1087,8 +1109,8 @@
             mark.fill ? ctx.fill() : ctx.stroke();
             ctx.fillStyle = mark.fill ? "#fff" : state.black;
             ctx.textAlign = "center";
-            ctx.font = `700 61px ${FONT_CHINESE}`;
-            ctx.fillText(mark.text, x + size / 2, y + 60, size - 8);
+            ctx.font = `400 70px ${FONT_CURRENT_CHINESE}`;
+            ctx.fillText(mark.text, x + size / 2, y + 65, size - 5);
             ctx.restore();
         });
     }
@@ -1109,31 +1131,31 @@
         const chinese = drawText(ctx, {
             text: spaceCurrentStationName(data.current.chinese),
             x: geometry.half,
-            y: geometry.lineTop - 112,
+            y: geometry.lineTop - 120,
             maxWidth: Math.min(width * .48, 960),
-            startSize: 156,
+            startSize: 150,
             minSize: 102,
-            font: FONT_CHINESE,
-            weight: "900",
+            font: FONT_CURRENT_CHINESE,
+            weight: "400",
             fitMode: "condense"
         });
         const zhuyin = drawText(ctx, {
             text: data.current.zhuyin,
             x: geometry.half,
-            y: geometry.lineTop - 38,
+            y: geometry.lineTop - 40,
             maxWidth: Math.min(width * .56, 1040),
-            startSize: 47,
+            startSize: 50,
             minSize: 30,
-            font: FONT_CHINESE,
-            weight: "700",
+            font: FONT_CURRENT_CHINESE,
+            weight: "400",
             fitMode: "condense"
         });
         const currentEnglish = drawText(ctx, {
             text: data.current.english,
             x: geometry.half,
-            y: geometry.lineBottom + 82,
+            y: geometry.lineBottom + 80,
             maxWidth: Math.min(width * .52, 960),
-            startSize: 64,
+            startSize: 65,
             minSize: 38,
             font: FONT_LATIN,
             weight: "700",
@@ -1141,15 +1163,15 @@
         });
 
         if (data.showLanguages) {
-            const sideX = geometry.half + chinese.width / 2 + 55;
+            const sideX = geometry.half + chinese.width / 2 + 65;
             const visibleMarkCount = data.showCityMarks ? Math.max(1, data.cityMarks.length) : 0;
             const languageWidth = Math.max(80, width - sideX - (visibleMarkCount * 90 + 160));
             drawText(ctx, {
                 text: data.current.japanese,
                 x: sideX,
-                y: geometry.lineTop - 188,
+                y: geometry.lineTop - 195,
                 maxWidth: languageWidth,
-                startSize: 45,
+                startSize: 50,
                 minSize: 28,
                 font: FONT_JAPANESE,
                 weight: "500",
@@ -1160,9 +1182,9 @@
             drawText(ctx, {
                 text: data.current.korean,
                 x: sideX,
-                y: geometry.lineTop - 122,
+                y: geometry.lineTop - 120,
                 maxWidth: languageWidth,
-                startSize: 45,
+                startSize: 50,
                 minSize: 28,
                 font: FONT_KOREAN,
                 weight: "500",
