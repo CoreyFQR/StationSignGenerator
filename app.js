@@ -12,6 +12,7 @@
     const STORAGE_KEY = "jrChineseSignGeneratorVisualV2";
     const LEGACY_STORAGE_KEY = "jrChineseSignGeneratorVisualV1";
     const SIDEBAR_PREFERENCE_KEY = "jrChineseSignGeneratorSidebarPinned";
+    const STATE_VERSION = 3;
 
     const FRAMES = {
         "SE-6": { width: 1830, height: 490, padding: { top: 80, right: 35, bottom: 30, left: 35 } },
@@ -24,6 +25,7 @@
     };
 
     const defaultState = () => ({
+        stateVersion: STATE_VERSION,
         board: { type: "SE-6", light: true },
         showNumbering: true,
         showLanguages: true,
@@ -89,9 +91,19 @@
         const fallback = defaultState();
         if (!value || typeof value !== "object") return fallback;
         const legacyVisibility = typeof value.showMultilingual === "boolean" ? value.showMultilingual : true;
+        const cityMarks = Array.isArray(value.cityMarks)
+            ? value.cityMarks.map(mark => ({ ...mark }))
+            : fallback.cityMarks;
+        if ((Number(value.stateVersion) || 0) < STATE_VERSION
+            && cityMarks.length === 1
+            && cityMarks[0].text === "沪"
+            && cityMarks[0].fill === false) {
+            cityMarks[0].fill = true;
+        }
         return {
             ...fallback,
             ...value,
+            stateVersion: STATE_VERSION,
             showNumbering: typeof value.showNumbering === "boolean" ? value.showNumbering : legacyVisibility,
             showLanguages: typeof value.showLanguages === "boolean" ? value.showLanguages : legacyVisibility,
             showCityMarks: typeof value.showCityMarks === "boolean" ? value.showCityMarks : true,
@@ -113,7 +125,7 @@
                     : (value.rightStations?.[index]?.english ?? station.english),
                 numberings: Array.isArray(value.rightStations?.[index]?.numberings) ? value.rightStations[index].numberings : station.numberings
             })),
-            cityMarks: Array.isArray(value.cityMarks) ? value.cityMarks : fallback.cityMarks,
+            cityMarks,
             routeColors: Array.isArray(value.routeColors) && value.routeColors.length ? value.routeColors : fallback.routeColors
         };
     }
@@ -598,6 +610,7 @@
 
     function renderMarks() {
         const container = document.getElementById("markList");
+        const addButton = document.getElementById("addMarkButton");
         container.replaceChildren();
         state.cityMarks.forEach((mark, index) => {
             const row = document.createElement("div");
@@ -636,6 +649,8 @@
             row.append(label, textInput, fillLabel, spacer, remove);
             container.append(row);
         });
+        addButton.disabled = state.cityMarks.length >= 4;
+        inspectorPanel.scrollTop = 0;
     }
 
     function renderRouteColors() {
@@ -1461,7 +1476,8 @@
     });
 
     document.getElementById("addMarkButton").addEventListener("click", () => {
-        if (state.cityMarks.length < 4) state.cityMarks.push({ text: "", fill: true });
+        if (state.cityMarks.length >= 4) return;
+        state.cityMarks.push({ text: "", fill: true });
         renderMarks();
         schedulePreview();
     });
@@ -1481,6 +1497,10 @@
     showInspectorButton.addEventListener("click", showInspector);
     document.getElementById("hideInspectorButton").addEventListener("click", hideInspector);
     pinInspectorButton.addEventListener("click", toggleInspectorPin);
+    inspectorPanel.addEventListener("scroll", () => {
+        if (inspectorPanel.scrollTop) inspectorPanel.scrollTop = 0;
+        if (inspectorPanel.scrollLeft) inspectorPanel.scrollLeft = 0;
+    }, { passive: true });
     document.addEventListener("click", event => {
         if (!event.target.closest(".color-editor")) closeColorEditors();
     });

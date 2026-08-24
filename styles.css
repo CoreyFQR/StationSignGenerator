@@ -195,13 +195,16 @@ canvas { display: block; width: 100%; height: 100%; border-radius: 3px; box-shad
 .validation-banner.show { display: block; }
 
 .inspector-panel {
-    position: sticky;
+    position: fixed;
     top: 90px;
+    right: max(20px, calc((100vw - 1560px) / 2));
+    width: 420px;
     height: calc(100vh - 108px);
     min-height: 520px;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    overflow: hidden;
+    overflow: visible;
+    overflow-anchor: none;
     border: 1px solid var(--line);
     border-radius: 18px;
     background: #fff;
@@ -317,11 +320,11 @@ input[type="text"]:focus, select:focus { border-color: var(--jr-green); box-shad
 .color-field { min-height: 58px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
 .color-field > span { color: var(--ink); }
 
-.panel-switch { min-height: 64px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 11px; background: #f9fcfa; }
+.panel-switch { position: relative; min-height: 64px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 11px; background: #f9fcfa; }
 .panel-switch > span { display: grid; gap: 2px; }
 .panel-switch strong { font-size: 11px; }
 .panel-switch small { color: var(--muted); font-size: 9px; font-weight: 400; }
-.panel-switch input, .toggle-field input { position: absolute; opacity: 0; }
+.panel-switch input, .toggle-field input { position: absolute; top: 50%; right: 10px; width: 36px; height: 21px; margin: 0; opacity: 0; transform: translateY(-50%); cursor: pointer; }
 .panel-switch i, .toggle-field i { position: relative; width: 36px; height: 21px; flex: 0 0 auto; border-radius: 999px; background: #bec7c1; transition: .18s ease; }
 .panel-switch i::after, .toggle-field i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .22); transition: .18s ease; }
 .panel-switch input:checked + i, .toggle-field input:checked + i { background: var(--jr-green); }
@@ -330,7 +333,7 @@ input[type="text"]:focus, select:focus { border-color: var(--jr-green); box-shad
 .switch-content { display: grid; gap: 8px; }
 .switch-action-row { min-height: 22px; display: flex; align-items: center; justify-content: flex-end; }
 
-.toggle-field { min-height: 58px; padding: 9px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fafcfa; font-size: 10px; }
+.toggle-field { position: relative; min-height: 58px; padding: 9px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fafcfa; font-size: 10px; }
 .toggle-field.compact { min-height: auto; padding: 0; border: 0; background: transparent; }
 .toggle-field-inline { min-height: 40px; padding: 0 7px; border: 0; }
 
@@ -362,6 +365,7 @@ input[type="text"]:focus, select:focus { border-color: var(--jr-green); box-shad
 .mini-button:hover { color: var(--jr-green-dark); border-color: #b9c9bf; background: var(--jr-green-soft); }
 .text-button { padding: 4px 0; color: var(--jr-green-dark); background: transparent; font-size: 10px; font-weight: 700; }
 .text-button:hover { color: var(--jr-green); }
+.text-button:disabled { opacity: .38; cursor: not-allowed; }
 .icon-button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: #fff; font-size: 16px; }
 
 @media (max-width: 1400px) {
@@ -371,6 +375,7 @@ input[type="text"]:focus, select:focus { border-color: var(--jr-green); box-shad
 
 @media (max-width: 1180px) {
     .editor-workspace { grid-template-columns: minmax(0, 1fr) 370px; }
+    .inspector-panel { right: 20px; width: 370px; }
     .canvas-controls { width: 100%; display: grid; grid-template-columns: minmax(150px, 300px) 178px auto; }
     .board-type-control { width: auto; }
 }
