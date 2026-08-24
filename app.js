@@ -4,10 +4,11 @@
     const LINE_TWO_GREEN = "#8DBB14";
     const DIRECTION_BAND_RED = "#E2001A";
     const FONT_CURRENT_CHINESE = "'Dream Han Sans W26', 'Microsoft YaHei', 'PingFang SC', sans-serif";
-    const FONT_SIDE_CHINESE = "'Dream Han Sans W20', 'Microsoft YaHei', 'PingFang SC', sans-serif";
+    const FONT_SIDE_CHINESE = "'Dream Han Sans W18', 'Microsoft YaHei', 'PingFang SC', sans-serif";
     const FONT_JAPANESE = "'Yu Gothic', 'Hiragino Sans', 'Meiryo', sans-serif";
     const FONT_KOREAN = "'Malgun Gothic', 'Noto Sans KR', sans-serif";
     const FONT_LATIN = "'Arial', sans-serif";
+    const FONT_TLC = "'Frutiger LT 65 Bold', 'Arial', sans-serif";
     const STORAGE_KEY = "jrChineseSignGeneratorVisualV2";
     const LEGACY_STORAGE_KEY = "jrChineseSignGeneratorVisualV1";
     const SIDEBAR_PREFERENCE_KEY = "jrChineseSignGeneratorSidebarPinned";
@@ -992,7 +993,7 @@
             groupCtx.fillStyle = "#000";
             groupCtx.textAlign = "center";
             groupCtx.textBaseline = "alphabetic";
-            groupCtx.font = `500 ${32 * markerScale}px ${FONT_LATIN}`;
+            groupCtx.font = `700 ${32 * markerScale}px ${FONT_TLC}`;
             groupCtx.fillText(data.current.tlc, groupWidth / 2, 30 * markerScale, groupWidth - 16 * markerScale);
             groupCtx.globalCompositeOperation = "source-over";
             data.current.numberings.forEach((numbering, index) => {
