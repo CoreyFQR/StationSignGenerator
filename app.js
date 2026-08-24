@@ -838,34 +838,36 @@
         const isRight = align === "right";
         const station = isRight ? data.rightStations[1] : data.leftStations[1];
         const shift = getSideStationShift(data, station, true);
-        const top = lineTop - 80;
-        const bottom = lineTop - 25;
+        const top = lineTop - 170;
+        const bottom = lineTop - 95;
         const center = (top + bottom) / 2;
         ctx.beginPath();
         if (isRight) {
             ctx.moveTo(width - branchStart, lineTop);
-            ctx.lineTo(width - branchStart + 75, top);
+            ctx.lineTo(width - branchStart + 168, top);
             if (station.go) {
-                ctx.lineTo(width - 130 - shift, top);
-                ctx.lineTo(width - 50 - shift, center);
-                ctx.lineTo(width - 130 - shift, bottom);
+                ctx.lineTo(width - 160 - shift, top);
+                ctx.lineTo(width - 65 - shift, center);
+                ctx.lineTo(width - 160 - shift, bottom);
             } else {
                 ctx.lineTo(width, top);
                 ctx.lineTo(width, bottom);
             }
-            ctx.lineTo(width - branchStart + 75, bottom);
+            ctx.lineTo(width - branchStart + 194, bottom);
+            ctx.lineTo(width - branchStart + 102, lineTop);
         } else {
             ctx.moveTo(branchStart, lineTop);
-            ctx.lineTo(branchStart - 75, top);
+            ctx.lineTo(branchStart - 168, top);
             if (station.go) {
-                ctx.lineTo(130 + shift, top);
-                ctx.lineTo(50 + shift, center);
-                ctx.lineTo(130 + shift, bottom);
+                ctx.lineTo(160 + shift, top);
+                ctx.lineTo(65 + shift, center);
+                ctx.lineTo(160 + shift, bottom);
             } else {
                 ctx.lineTo(0, top);
                 ctx.lineTo(0, bottom);
             }
-            ctx.lineTo(branchStart - 75, bottom);
+            ctx.lineTo(branchStart - 194, bottom);
+            ctx.lineTo(branchStart - 102, lineTop);
         }
         ctx.closePath();
     }
@@ -1093,11 +1095,11 @@
             const spurStation = spur && index === 1;
             const compactStation = doubleBranch || spurStation;
             const inwardShift = doubleBranch ? sharedBranchShift : getSideStationShift(data, station, compactStation);
-            const baseX = compactStation ? 130 : (station.go ? 200 : 80);
+            const baseX = doubleBranch ? 130 : (station.go ? 200 : 80);
             const x = mirror(baseX + inwardShift);
             const y = doubleBranch
                 ? [geometry.lineTop - 25, geometry.lineBottom + 25][index]
-                : (spurStation ? geometry.lineTop - 52.5 : geometry.lineY);
+                : (spurStation ? geometry.lineTop - 132.5 : geometry.lineY);
             let maxWidth = compactStation ? Math.max(220, geometry.branchStart - 270) : Math.max(300, geometry.half - 390);
             if (!compactStation && mode === "details" && currentEnglish) {
                 const centerEdge = isRight
@@ -1106,8 +1108,8 @@
                 maxWidth = Math.max(140, isRight ? x - centerEdge - 40 : centerEdge - x - 40);
             }
             const chineseSize = compactStation ? 60 : (station.go ? 80 : 70);
-            const englishStartSize = doubleBranch ? 40 : (spurStation ? 35 : 55);
-            const englishY = doubleBranch ? y + 80 : (spurStation ? geometry.lineTop + 4 : geometry.lineBottom + 70);
+            const englishStartSize = doubleBranch ? 40 : (spurStation ? 42 : 55);
+            const englishY = doubleBranch ? y + 80 : (spurStation ? geometry.lineTop - 45 : geometry.lineBottom + 70);
             if (mode === "names") {
                 drawText(ctx, {
                     text: station.chinese,
@@ -1140,7 +1142,7 @@
             });
             if (data.showNumbering && station.go && station.numberings.length) {
                 const nSize = compactStation ? 50 : 80;
-                const numberingY = doubleBranch ? y + 36 : (spurStation ? geometry.lineTop - 22 : geometry.lineBottom + 15);
+                const numberingY = doubleBranch ? y + 36 : (spurStation ? geometry.lineTop - 90 : geometry.lineBottom + 15);
                 const numberingGap = nSize * .08;
                 const numberingTextGap = compactStation ? 10 : 18;
                 const numberingBlockWidth = station.numberings.length * nSize
@@ -1400,6 +1402,15 @@
             if (exclusiveBranch && value) {
                 state[exclusiveBranch] = false;
                 syncBoundPeers(exclusiveBranch, null);
+            }
+            if ((target.dataset.bind === "spurLeft" || target.dataset.bind === "spurRight") && value) {
+                state.showNumbering = false;
+                state.showCityMarks = false;
+                state.current.showTlc = false;
+                state.showLanguages = false;
+                ["showNumbering", "showCityMarks", "current.showTlc", "showLanguages"].forEach(path => {
+                    syncBoundPeers(path, null);
+                });
             }
             if (target.dataset.bind === "current.showTlc" && value && state.current.numberings.length === 0) {
                 state.current.numberings.push({ route: "", number: "", color: state.routeColors[0] || LINE_TWO_GREEN });
