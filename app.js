@@ -956,9 +956,9 @@
             if (ctx.measureText(route).width <= size * .76) break;
             routeSize -= 1;
         } while (routeSize > size * .16);
-        ctx.fillText(route, x + size / 2, y + size * .42, size * .78);
-        ctx.font = `700 ${size * .46}px ${FONT_TLC}`;
-        ctx.fillText(number, x + size / 2, y + size * .82);
+        ctx.fillText(route, x + size / 2, y + size * .40, size * .78);
+        ctx.font = `700 ${size * .42}px ${FONT_TLC}`;
+        ctx.fillText(number, x + size / 2, y + size * .79);
         ctx.restore();
     }
 
@@ -980,26 +980,26 @@
 
         if (data.current.showTlc) {
             const groupY = geometry.lineTop - 250;
-            const groupWidth = (108 * count + 8) * markerScale;
-            const groupHeight = 142 * markerScale;
+            const groupWidth = (108 * count + 12) * markerScale;
+            const groupHeight = 145 * markerScale;
             const group = document.createElement("canvas");
             group.width = Math.ceil(groupWidth);
             group.height = Math.ceil(groupHeight);
             const groupCtx = group.getContext("2d");
             groupCtx.fillStyle = state.black;
-            roundRectPath(groupCtx, 0, 0, groupWidth, groupHeight, 18 * markerScale);
+            roundRectPath(groupCtx, 0, 0, groupWidth, groupHeight, 16 * markerScale);
             groupCtx.fill();
             groupCtx.globalCompositeOperation = "destination-out";
             groupCtx.fillStyle = "#000";
             groupCtx.textAlign = "center";
             groupCtx.textBaseline = "alphabetic";
-            groupCtx.font = `700 ${32 * markerScale}px ${FONT_TLC}`;
+            groupCtx.font = `700 ${34 * markerScale}px ${FONT_TLC}`;
             groupCtx.fillText(data.current.tlc, groupWidth / 2, 30 * markerScale, groupWidth - 16 * markerScale);
             groupCtx.globalCompositeOperation = "source-over";
             data.current.numberings.forEach((numbering, index) => {
                 paintNumbering(
                     groupCtx,
-                    8 * markerScale + markerStep * index,
+                    10 * markerScale + markerStep * index,
                     34 * markerScale,
                     markerSize,
                     numbering,
