@@ -3,8 +3,7 @@
 
     const LINE_TWO_GREEN = "#8DBB14";
     const DIRECTION_BAND_RED = "#E2001A";
-    const FONT_CHINESE = "'Dream Han Sans W26', 'Microsoft YaHei', 'PingFang SC', sans-serif";
-    const FONT_SIDE_CHINESE = "'Dream Han Sans W20', 'Microsoft YaHei', sans-serif";
+    const FONT_CHINESE = "'Dream Han Sans W20', 'Microsoft YaHei', 'PingFang SC', sans-serif";
     const FONT_JAPANESE = "'Yu Gothic', 'Hiragino Sans', 'Meiryo', sans-serif";
     const FONT_KOREAN = "'Malgun Gothic', 'Noto Sans KR', sans-serif";
     const FONT_LATIN = "'Arial', sans-serif";
@@ -1023,7 +1022,7 @@
                     maxWidth,
                     startSize: chineseSize,
                     minSize: 40,
-                    font: FONT_SIDE_CHINESE,
+                    font: FONT_CHINESE,
                     weight: "400",
                     align,
                     visualCenter: true,
@@ -1115,7 +1114,7 @@
             startSize: 156,
             minSize: 102,
             font: FONT_CHINESE,
-            weight: "700",
+            weight: "900",
             fitMode: "condense"
         });
         const zhuyin = drawText(ctx, {

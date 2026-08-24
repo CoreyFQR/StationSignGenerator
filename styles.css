@@ -1,12 +1,8 @@
 @font-face {
-    font-family: "Dream Han Sans W26";
-    src: url("fonts/DreamHanSans-W26.ttc") format("truetype-collection");
-    font-display: swap;
-}
-
-@font-face {
     font-family: "Dream Han Sans W20";
-    src: url("fonts/DreamHanSans-W20.ttc") format("truetype-collection");
+    src: url("fonts/DreamHanSans-W20.ttc");
+    font-style: normal;
+    font-weight: 400;
     font-display: swap;
 }
 
