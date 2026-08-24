@@ -30,6 +30,8 @@
         showCityMarks: true,
         branchLeft: false,
         branchRight: false,
+        spurLeft: false,
+        spurRight: false,
         black: "#1A1A1A",
         current: {
             chinese: "人民广场",
@@ -518,7 +520,10 @@
             element.hidden = !state.showCityMarks;
         });
         document.querySelectorAll("[data-branch-section]").forEach(element => {
-            element.hidden = !state[element.dataset.branchSection];
+            const side = element.dataset.branchSection;
+            element.hidden = side === "left"
+                ? !(state.branchLeft || state.spurLeft)
+                : !(state.branchRight || state.spurRight);
         });
         document.querySelectorAll("[data-station-numberings]").forEach(element => {
             const station = getPath(element.dataset.stationNumberings);
@@ -748,6 +753,11 @@
         return Math.max(...stations.slice(0, 2).map(station => getSideStationShift(data, station, true)));
     }
 
+    function getSideLayout(data, align) {
+        if (align === "left") return data.branchLeft ? "double" : (data.spurLeft ? "spur" : "single");
+        return data.branchRight ? "double" : (data.spurRight ? "spur" : "single");
+    }
+
     function createBandPath(ctx, data, width, lineTop, lineBottom, lineY, branchStart) {
         const sharedRightShift = getSharedBranchShift(data, data.rightStations, data.branchRight);
         const sharedLeftShift = getSharedBranchShift(data, data.leftStations, data.branchLeft);
@@ -824,6 +834,42 @@
         ctx.closePath();
     }
 
+    function createSpurBandPath(ctx, data, width, lineTop, branchStart, align) {
+        const isRight = align === "right";
+        const station = isRight ? data.rightStations[1] : data.leftStations[1];
+        const shift = getSideStationShift(data, station, true);
+        const top = lineTop - 80;
+        const bottom = lineTop - 25;
+        const center = (top + bottom) / 2;
+        ctx.beginPath();
+        if (isRight) {
+            ctx.moveTo(width - branchStart, lineTop);
+            ctx.lineTo(width - branchStart + 75, top);
+            if (station.go) {
+                ctx.lineTo(width - 130 - shift, top);
+                ctx.lineTo(width - 50 - shift, center);
+                ctx.lineTo(width - 130 - shift, bottom);
+            } else {
+                ctx.lineTo(width, top);
+                ctx.lineTo(width, bottom);
+            }
+            ctx.lineTo(width - branchStart + 75, bottom);
+        } else {
+            ctx.moveTo(branchStart, lineTop);
+            ctx.lineTo(branchStart - 75, top);
+            if (station.go) {
+                ctx.lineTo(130 + shift, top);
+                ctx.lineTo(50 + shift, center);
+                ctx.lineTo(130 + shift, bottom);
+            } else {
+                ctx.lineTo(0, top);
+                ctx.lineTo(0, bottom);
+            }
+            ctx.lineTo(branchStart - 75, bottom);
+        }
+        ctx.closePath();
+    }
+
     function drawLineBands(ctx, data, width, height) {
         const half = width / 2;
         const lineY = height / 2 + 80;
@@ -859,6 +905,20 @@
             ctx.fillRect(half - lineHeight / 2, lineTop + colorHeight * index, lineHeight, Math.ceil(colorHeight));
         });
         ctx.restore();
+        if (getSideLayout(data, "left") === "spur") {
+            ctx.save();
+            ctx.fillStyle = data.leftStations[1].lineColor;
+            createSpurBandPath(ctx, data, width, lineTop, branchStart, "left");
+            ctx.fill();
+            ctx.restore();
+        }
+        if (getSideLayout(data, "right") === "spur") {
+            ctx.save();
+            ctx.fillStyle = data.rightStations[1].lineColor;
+            createSpurBandPath(ctx, data, width, lineTop, branchStart, "right");
+            ctx.fill();
+            ctx.restore();
+        }
         return { half, lineY, lineTop, lineBottom, branchStart, height };
     }
 
@@ -974,7 +1034,7 @@
         if (!data.showNumbering || !data.current.numberings.length) return;
         const count = data.current.numberings.length;
         const tlcX = Math.max(25, geometry.half - chinese.width / 2 - 80 - 183.6 * count);
-        const markerScale = data.current.showTlc && data.branchLeft && tlcX < geometry.branchStart - 50 ? 1.2 : 1.5;
+        const markerScale = data.current.showTlc && getSideLayout(data, "left") !== "single" && tlcX < geometry.branchStart - 50 ? 1.2 : 1.5;
         const markerSize = 100 * markerScale;
         const markerStep = 108 * markerScale;
 
@@ -1021,27 +1081,33 @@
         }
     }
 
-    function drawSideStations(ctx, data, width, geometry, stations, branch, align, mode = "details", currentEnglish = null) {
+    function drawSideStations(ctx, data, width, geometry, stations, layout, align, mode = "details", currentEnglish = null) {
         const isRight = align === "right";
         const mirror = value => isRight ? width - value : value;
-        const count = branch ? 2 : 1;
-        const sharedBranchShift = getSharedBranchShift(data, stations, branch);
+        const doubleBranch = layout === "double";
+        const spur = layout === "spur";
+        const count = layout === "single" ? 1 : 2;
+        const sharedBranchShift = getSharedBranchShift(data, stations, doubleBranch);
         for (let index = 0; index < count; index += 1) {
             const station = stations[index];
-            const inwardShift = branch ? sharedBranchShift : getSideStationShift(data, station, false);
-            const baseX = branch ? 130 : (station.go ? 200 : 80);
+            const spurStation = spur && index === 1;
+            const compactStation = doubleBranch || spurStation;
+            const inwardShift = doubleBranch ? sharedBranchShift : getSideStationShift(data, station, compactStation);
+            const baseX = compactStation ? 130 : (station.go ? 200 : 80);
             const x = mirror(baseX + inwardShift);
-            const y = branch ? [geometry.lineTop - 25, geometry.lineBottom + 25][index] : geometry.lineY;
-            let maxWidth = branch ? Math.max(220, geometry.branchStart - 270) : Math.max(300, geometry.half - 390);
-            if (!branch && mode === "details" && currentEnglish) {
+            const y = doubleBranch
+                ? [geometry.lineTop - 25, geometry.lineBottom + 25][index]
+                : (spurStation ? geometry.lineTop - 52.5 : geometry.lineY);
+            let maxWidth = compactStation ? Math.max(220, geometry.branchStart - 270) : Math.max(300, geometry.half - 390);
+            if (!compactStation && mode === "details" && currentEnglish) {
                 const centerEdge = isRight
                     ? geometry.half + currentEnglish.width / 2
                     : geometry.half - currentEnglish.width / 2;
                 maxWidth = Math.max(140, isRight ? x - centerEdge - 40 : centerEdge - x - 40);
             }
-            const chineseSize = branch ? 60 : (station.go ? 80 : 70);
-            const englishStartSize = branch ? 40 : 55;
-            const englishY = branch ? y + 80 : geometry.lineBottom + 70;
+            const chineseSize = compactStation ? 60 : (station.go ? 80 : 70);
+            const englishStartSize = doubleBranch ? 40 : (spurStation ? 35 : 55);
+            const englishY = doubleBranch ? y + 80 : (spurStation ? geometry.lineTop + 4 : geometry.lineBottom + 70);
             if (mode === "names") {
                 drawText(ctx, {
                     text: station.chinese,
@@ -1073,13 +1139,13 @@
                 fitMode: "condense"
             });
             if (data.showNumbering && station.go && station.numberings.length) {
-                const nSize = branch ? 50 : 80;
-                const numberingY = branch ? y + 36 : geometry.lineBottom + 15;
+                const nSize = compactStation ? 50 : 80;
+                const numberingY = doubleBranch ? y + 36 : (spurStation ? geometry.lineTop - 22 : geometry.lineBottom + 15);
                 const numberingGap = nSize * .08;
-                const numberingTextGap = branch ? 10 : 18;
+                const numberingTextGap = compactStation ? 10 : 18;
                 const numberingBlockWidth = station.numberings.length * nSize
                     + Math.max(0, station.numberings.length - 1) * numberingGap;
-                const singleMarkerBase = branch ? 120 : 180;
+                const singleMarkerBase = compactStation ? 120 : 180;
                 const numberingX = station.numberings.length < 2
                     ? (isRight ? width - singleMarkerBase : singleMarkerBase - nSize * 1.08)
                     : (isRight ? x + numberingTextGap : x - numberingTextGap - numberingBlockWidth);
@@ -1109,7 +1175,8 @@
             ctx.strokeStyle = state.black;
             ctx.fillStyle = state.black;
             roundRectPath(ctx, x, y, size, size, 7);
-            mark.fill ? ctx.fill() : ctx.stroke();
+            if (mark.fill) ctx.fill();
+            ctx.stroke();
             ctx.fillStyle = mark.fill ? "#fff" : state.black;
             ctx.textAlign = "center";
             ctx.font = `400 70px ${FONT_CURRENT_CHINESE}`;
@@ -1127,8 +1194,10 @@
         bandLayer.height = height;
         const bandCtx = bandLayer.getContext("2d");
         const geometry = drawLineBands(bandCtx, data, width, height);
-        drawSideStations(bandCtx, data, width, geometry, data.leftStations, data.branchLeft, "left", "names");
-        drawSideStations(bandCtx, data, width, geometry, data.rightStations, data.branchRight, "right", "names");
+        const leftLayout = getSideLayout(data, "left");
+        const rightLayout = getSideLayout(data, "right");
+        drawSideStations(bandCtx, data, width, geometry, data.leftStations, leftLayout, "left", "names");
+        drawSideStations(bandCtx, data, width, geometry, data.rightStations, rightLayout, "right", "names");
         ctx.drawImage(bandLayer, 0, 0);
 
         const chinese = drawText(ctx, {
@@ -1198,8 +1267,8 @@
         }
 
         drawTlcAndNumberings(ctx, data, chinese, zhuyin, geometry);
-        drawSideStations(ctx, data, width, geometry, data.leftStations, data.branchLeft, "left", "details", currentEnglish);
-        drawSideStations(ctx, data, width, geometry, data.rightStations, data.branchRight, "right", "details", currentEnglish);
+        drawSideStations(ctx, data, width, geometry, data.leftStations, leftLayout, "left", "details", currentEnglish);
+        drawSideStations(ctx, data, width, geometry, data.rightStations, rightLayout, "right", "details", currentEnglish);
         drawCityMarks(ctx, data, width, geometry.lineTop);
         ctx.restore();
     }
@@ -1322,6 +1391,16 @@
             }
             setPath(target.dataset.bind, value);
             syncBoundPeers(target.dataset.bind, target);
+            const exclusiveBranch = {
+                branchLeft: "spurLeft",
+                spurLeft: "branchLeft",
+                branchRight: "spurRight",
+                spurRight: "branchRight"
+            }[target.dataset.bind];
+            if (exclusiveBranch && value) {
+                state[exclusiveBranch] = false;
+                syncBoundPeers(exclusiveBranch, null);
+            }
             if (target.dataset.bind === "current.showTlc" && value && state.current.numberings.length === 0) {
                 state.current.numberings.push({ route: "", number: "", color: state.routeColors[0] || LINE_TWO_GREEN });
                 renderNumberingLists();
