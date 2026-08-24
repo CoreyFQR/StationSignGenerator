@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="可直接点击站牌内容编辑的 JR 风格中文站牌生成器。">
+    <title>JR风格中文站牌生成器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <form id="generatorForm" novalidate>
+        <header class="app-header">
+            <div class="header-inner">
+                <div class="brand-block">
+                    <span class="brand-mark" aria-hidden="true"></span>
+                    <h1>JR风格中文站牌生成器</h1>
+                </div>
+            </div>
+        </header>
+
+        <main class="editor-shell">
+            <section class="editor-workspace" id="editorWorkspace" aria-label="站牌编辑器">
+                <section class="canvas-card" aria-label="站牌画布">
+                    <div class="canvas-toolbar" aria-label="站牌设置与操作">
+                        <div class="canvas-title">
+                            <h2>站牌画布</h2>
+                        </div>
+                        <div class="canvas-controls">
+                            <label class="compact-field board-type-control"><span>灯箱规格</span><select data-bind="board.type"><option value="SE-6">SE-6 型（1900×600）</option><option value="SE-7">SE-7 型（2480×600）</option><option value="SE-8">SE-8 型（3700×600）</option><option value="RATIO-3-1">3：1（1800×600）</option><option value="RATIO-4-1">4：1（2400×600）</option><option value="RATIO-5-1">5：1（3000×600）</option><option value="RATIO-6-1">6：1（3600×600）</option></select></label>
+                            <div class="compact-field color-control"><span>文字颜色</span><input type="color" data-bind="black" aria-label="文字颜色"></div>
+                            <label class="toggle-chip"><input type="checkbox" data-bind="board.light"><span>启用灯箱效果</span></label>
+                        </div>
+                        <div class="canvas-actions">
+                            <button class="button subtle" type="button" id="resetButton">恢复默认</button>
+                            <button class="button ghost" type="button" id="showInspectorButton" hidden>显示编辑栏</button>
+                            <button class="button primary" type="button" id="downloadButton">下载图片</button>
+                        </div>
+                    </div>
+                    <div class="canvas-stage">
+                        <div class="canvas-wrap" id="canvasWrap">
+                            <canvas id="signCanvas" width="1900" height="600"></canvas>
+                            <div class="canvas-hotspots" id="hotspotLayer" aria-label="站牌可编辑区域">
+                                <button class="canvas-hotspot hotspot-current active" type="button" data-inspector="current"><span>本站信息</span></button>
+                                <button class="canvas-hotspot hotspot-left" type="button" data-inspector="left"><span>左侧相邻站</span></button>
+                                <button class="canvas-hotspot hotspot-right" type="button" data-inspector="right"><span>右侧相邻站</span></button>
+                                <button class="canvas-hotspot hotspot-route" type="button" data-inspector="route"><span>线路颜色</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="validationMessage" class="validation-banner" role="alert">请检查输入格式。</p>
+                </section>
+
+                <aside class="inspector-panel" id="inspectorPanel" aria-label="内容编辑栏" aria-hidden="false">
+                    <div class="inspector-header">
+                        <div><span>当前区域</span><h2 id="inspectorTitle">本站信息</h2></div>
+                        <div class="inspector-actions">
+                            <button class="mini-button" type="button" id="pinInspectorButton" aria-pressed="true">取消固定</button>
+                            <button class="mini-button" type="button" id="hideInspectorButton">隐藏</button>
+                        </div>
+                    </div>
+
+                    <div class="inspector-body">
+                        <section class="inspector-content" data-inspector-panel="current">
+                            <div class="form-section">
+                                <div class="section-title"><h3>站名</h3></div>
+                                <div class="form-grid two-columns">
+                                    <label class="field"><span>中文站名</span><input type="text" data-bind="current.chinese" required></label>
+                                    <label class="field"><span>英文站名</span><input type="text" data-bind="current.english"></label>
+                                    <label class="field span-all"><span>中文注音文字/拼音</span><input type="text" data-bind="current.zhuyin" required></label>
+                                </div>
+                            </div>
+
+                            <div class="form-section switch-section">
+                                <label class="panel-switch"><span><strong>多语种站名</strong></span><input type="checkbox" data-bind="showLanguages"><i></i></label>
+                                <div class="form-grid two-columns nested-fields" data-language-section>
+                                    <label class="field"><span>日文站名</span><input type="text" data-bind="current.japanese"></label>
+                                    <label class="field"><span>韩文站名</span><input type="text" data-bind="current.korean"></label>
+                                </div>
+                            </div>
+
+                            <div class="form-section switch-section">
+                                <label class="panel-switch"><span><strong>车站编号</strong></span><input type="checkbox" data-bind="showNumbering"><i></i></label>
+                                <div class="switch-content" data-numbering-section>
+                                    <div class="switch-action-row"><button class="text-button" type="button" data-add-numbering="current.numberings">添加编号</button></div>
+                                    <div class="repeat-list" data-numbering-list="current.numberings"></div>
+                                </div>
+                            </div>
+
+                            <div class="form-section switch-section">
+                                <label class="panel-switch"><span><strong>车站三字母代码</strong></span><input type="checkbox" data-bind="current.showTlc"><i></i></label>
+                                <div class="form-grid nested-fields" data-tlc-section>
+                                    <label class="field tlc-field"><span>代码</span><input type="text" data-bind="current.tlc" maxlength="3" pattern="[A-Za-z]{3}"></label>
+                                </div>
+                            </div>
+
+                            <div class="form-section switch-section">
+                                <label class="panel-switch"><span><strong>特定都区市内标记</strong></span><input type="checkbox" data-bind="showCityMarks"><i></i></label>
+                                <div class="switch-content" data-mark-section>
+                                    <div class="switch-action-row"><button class="text-button" type="button" id="addMarkButton">添加文字</button></div>
+                                    <div class="repeat-list" id="markList"></div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="inspector-content" data-inspector-panel="left" hidden>
+                            <div class="form-section switch-section first-section">
+                                <label class="panel-switch"><span><strong>左侧双分支</strong></span><input type="checkbox" data-bind="branchLeft"><i></i></label>
+                            </div>
+                            <div class="station-block">
+                                <div class="section-title"><h3>左侧主线站</h3></div>
+                                <div class="form-grid two-columns station-grid">
+                                    <label class="field"><span>中文站名</span><input type="text" data-bind="leftStations.0.chinese"></label>
+                                    <label class="field"><span>英文站名</span><input type="text" data-bind="leftStations.0.english"></label>
+                                    <div class="field color-field"><span>条带颜色</span><input type="color" data-bind="leftStations.0.lineColor"></div>
+                                    <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="leftStations.0.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-numberings" data-numbering-section data-station-numberings="leftStations.0">
+                                    <div class="subsection-heading"><h3>线路编号</h3><button class="text-button" type="button" data-add-numbering="leftStations.0.numberings">添加编号</button></div>
+                                    <div class="repeat-list" data-numbering-list="leftStations.0.numberings"></div>
+                                </div>
+                            </div>
+                            <div class="station-block" data-branch-section="branchLeft">
+                                <div class="section-title"><h3>左侧支线站</h3></div>
+                                <div class="form-grid two-columns station-grid">
+                                    <label class="field"><span>中文站名</span><input type="text" data-bind="leftStations.1.chinese"></label>
+                                    <label class="field"><span>英文站名</span><input type="text" data-bind="leftStations.1.english"></label>
+                                    <div class="field color-field"><span>条带颜色</span><input type="color" data-bind="leftStations.1.lineColor"></div>
+                                    <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="leftStations.1.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-numberings" data-numbering-section data-station-numberings="leftStations.1">
+                                    <div class="subsection-heading"><h3>线路编号</h3><button class="text-button" type="button" data-add-numbering="leftStations.1.numberings">添加编号</button></div>
+                                    <div class="repeat-list" data-numbering-list="leftStations.1.numberings"></div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="inspector-content" data-inspector-panel="right" hidden>
+                            <div class="form-section switch-section first-section">
+                                <label class="panel-switch"><span><strong>右侧双分支</strong></span><input type="checkbox" data-bind="branchRight"><i></i></label>
+                            </div>
+                            <div class="station-block">
+                                <div class="section-title"><h3>右侧主线站</h3></div>
+                                <div class="form-grid two-columns station-grid">
+                                    <label class="field"><span>中文站名</span><input type="text" data-bind="rightStations.0.chinese"></label>
+                                    <label class="field"><span>英文站名</span><input type="text" data-bind="rightStations.0.english"></label>
+                                    <div class="field color-field"><span>条带颜色</span><input type="color" data-bind="rightStations.0.lineColor"></div>
+                                    <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="rightStations.0.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-numberings" data-numbering-section data-station-numberings="rightStations.0">
+                                    <div class="subsection-heading"><h3>线路编号</h3><button class="text-button" type="button" data-add-numbering="rightStations.0.numberings">添加编号</button></div>
+                                    <div class="repeat-list" data-numbering-list="rightStations.0.numberings"></div>
+                                </div>
+                            </div>
+                            <div class="station-block" data-branch-section="branchRight">
+                                <div class="section-title"><h3>右侧支线站</h3></div>
+                                <div class="form-grid two-columns station-grid">
+                                    <label class="field"><span>中文站名</span><input type="text" data-bind="rightStations.1.chinese"></label>
+                                    <label class="field"><span>英文站名</span><input type="text" data-bind="rightStations.1.english"></label>
+                                    <div class="field color-field"><span>条带颜色</span><input type="color" data-bind="rightStations.1.lineColor"></div>
+                                    <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="rightStations.1.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-numberings" data-numbering-section data-station-numberings="rightStations.1">
+                                    <div class="subsection-heading"><h3>线路编号</h3><button class="text-button" type="button" data-add-numbering="rightStations.1.numberings">添加编号</button></div>
+                                    <div class="repeat-list" data-numbering-list="rightStations.1.numberings"></div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="inspector-content" data-inspector-panel="route" hidden>
+                            <div class="form-section first-section">
+                                <div class="section-title"><h3>线路颜色</h3><button class="text-button" type="button" id="addRouteColorButton">添加并行线路</button></div>
+                                <div class="repeat-list" id="routeColorList"></div>
+                            </div>
+                        </section>
+                    </div>
+                </aside>
+            </section>
+        </main>
+    </form>
+    <script src="app.js" defer></script>
+</body>
+</html>
