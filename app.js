@@ -981,27 +981,31 @@
             const groupY = geometry.lineTop - 250;
             const groupWidth = (108 * count + 8) * markerScale;
             const groupHeight = 142 * markerScale;
-            ctx.save();
-            ctx.fillStyle = state.black;
-            roundRectPath(ctx, tlcX, groupY, groupWidth, groupHeight, 18 * markerScale);
-            ctx.fill();
-            ctx.globalCompositeOperation = "destination-out";
-            ctx.fillStyle = "#000";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "alphabetic";
-            ctx.font = `700 ${32 * markerScale}px ${FONT_LATIN}`;
-            ctx.fillText(data.current.tlc, tlcX + groupWidth / 2, groupY + 30 * markerScale, groupWidth - 16 * markerScale);
-            ctx.restore();
+            const group = document.createElement("canvas");
+            group.width = Math.ceil(groupWidth);
+            group.height = Math.ceil(groupHeight);
+            const groupCtx = group.getContext("2d");
+            groupCtx.fillStyle = state.black;
+            roundRectPath(groupCtx, 0, 0, groupWidth, groupHeight, 18 * markerScale);
+            groupCtx.fill();
+            groupCtx.globalCompositeOperation = "destination-out";
+            groupCtx.fillStyle = "#000";
+            groupCtx.textAlign = "center";
+            groupCtx.textBaseline = "alphabetic";
+            groupCtx.font = `500 ${32 * markerScale}px ${FONT_LATIN}`;
+            groupCtx.fillText(data.current.tlc, groupWidth / 2, 30 * markerScale, groupWidth - 16 * markerScale);
+            groupCtx.globalCompositeOperation = "source-over";
             data.current.numberings.forEach((numbering, index) => {
                 paintNumbering(
-                    ctx,
-                    tlcX + 8 * markerScale + markerStep * index,
-                    geometry.lineTop - (250 - 34 * markerScale),
+                    groupCtx,
+                    8 * markerScale + markerStep * index,
+                    34 * markerScale,
                     markerSize,
                     numbering,
                     true
                 );
             });
+            ctx.drawImage(group, tlcX, groupY);
         } else {
             data.current.numberings.forEach((numbering, index) => {
                 drawNumbering(
@@ -1051,7 +1055,6 @@
                     visualCenter: true,
                     color: "#000",
                     composite: "destination-out",
-                    strokeWidth: 1.6,
                     fitMode: "condense"
                 });
                 continue;
@@ -1065,7 +1068,6 @@
                 minSize: englishStartSize,
                 font: FONT_LATIN,
                 weight: "400",
-                strokeWidth: .8,
                 align,
                 fitMode: "condense"
             });
