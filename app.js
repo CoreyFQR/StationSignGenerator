@@ -64,7 +64,7 @@
             { chinese: "", english: "", lineColor: DIRECTION_BAND_RED, go: false, numberings: [] }
         ],
         cityMarks: [
-            { text: "沪", fill: false }
+            { text: "沪", fill: true }
         ],
         routeColors: [LINE_TWO_GREEN]
     });
