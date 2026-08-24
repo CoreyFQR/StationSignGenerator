@@ -1165,15 +1165,17 @@
         }
     }
 
-    function drawCityMarks(ctx, data, width, lineTop) {
+    function drawCityMarks(ctx, data, width, stationNameTop) {
         if (!data.showCityMarks) return;
         const marks = data.cityMarks.slice(0, 4);
         marks.forEach((mark, index) => {
             const size = 80;
+            const outlineWidth = 4;
             const x = width - 160 - (marks.length - 1 - index) * 100;
-            const y = lineTop - 228;
+            // Align the visible top edge of the marker with the station-name glyphs.
+            const y = stationNameTop + outlineWidth / 2;
             ctx.save();
-            ctx.lineWidth = 4;
+            ctx.lineWidth = outlineWidth;
             ctx.strokeStyle = state.black;
             ctx.fillStyle = state.black;
             roundRectPath(ctx, x, y, size, size, 7);
@@ -1271,7 +1273,7 @@
         drawTlcAndNumberings(ctx, data, chinese, zhuyin, geometry);
         drawSideStations(ctx, data, width, geometry, data.leftStations, leftLayout, "left", "details", currentEnglish);
         drawSideStations(ctx, data, width, geometry, data.rightStations, rightLayout, "right", "details", currentEnglish);
-        drawCityMarks(ctx, data, width, geometry.lineTop);
+        drawCityMarks(ctx, data, width, chinese.top);
         ctx.restore();
     }
 
