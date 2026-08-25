@@ -14,9 +14,18 @@
     const STORAGE_KEY = "jrChineseSignGeneratorVisualV2";
     const LEGACY_STORAGE_KEY = "jrChineseSignGeneratorVisualV1";
     const FICTIONAL_STORAGE_KEY = "fictionalChineseSignGeneratorVisualV1";
-    const FICTIONAL_STATE_VERSION = 5;
+    const FICTIONAL_STATE_VERSION = 7;
     const SIDEBAR_PREFERENCE_KEY = "jrChineseSignGeneratorSidebarPinned";
     const STATE_VERSION = 3;
+    const MAX_SIDE_LINE_COLORS = 4;
+    const TRANSPARENT_COLOR = "transparent";
+    const CMYK_PROFILE_URL = "profiles/CoatedFOGRA39.icc";
+    const RGB_PROFILE_URL = "profiles/sRGB2014.icc";
+    const LCMS_MODULE_URL = "./vendor/lcms-wasm/lcms.min.js";
+    const LCMS_WASM_URL = "vendor/lcms-wasm/lcms.wasm";
+    const opaqueColorMemory = new Map();
+    let iccTransformPromise = null;
+    let cmykConversionRequestId = 0;
     const NUMBERING_SHAPE_OPTIONS = [
         { value: "jr-east", label: "JR东日本式" },
         { value: "circle", label: "圆形" },
@@ -27,7 +36,8 @@
         const value = { ...(numbering || {}) };
         if (!NUMBERING_SHAPE_OPTIONS.some(option => option.value === value.shape)) value.shape = "jr-east";
         value.solid = value.solid === true;
-        value.textColor = normalizeHex(value.textColor) || normalizeHex(fallbackTextColor) || "#1A1A1A";
+        value.color = normalizeFictionalColor(value.color, LINE_TWO_GREEN);
+        value.textColor = normalizeFictionalColor(value.textColor, normalizeFictionalColor(fallbackTextColor, "#1A1A1A"));
         return value;
     }
 
@@ -38,6 +48,45 @@
                 .slice(0, 8)
                 .map(numbering => normalizeFictionalNumberingStyle(numbering, value.black));
         });
+        return value;
+    }
+
+    function normalizeStationLineColors(station) {
+        const fallback = normalizeFictionalColor(station.lineColor, LINE_TWO_GREEN);
+        const source = Array.isArray(station.lineColors) ? station.lineColors : [fallback];
+        const colors = source
+            .map(color => normalizeFictionalColor(color, null))
+            .filter(Boolean)
+            .slice(0, MAX_SIDE_LINE_COLORS);
+        station.lineColors = colors.length ? colors : [fallback];
+        station.lineColor = station.lineColors[0];
+        return station.lineColors;
+    }
+
+    function isSecondarySideLineActive(value, side) {
+        return side === "left"
+            ? value.branchLeft || value.spurLeft
+            : value.branchRight || value.spurRight;
+    }
+
+    function enforceFictionalSideLineColorLimit(value, side) {
+        const stations = side === "left" ? value.leftStations : value.rightStations;
+        stations.forEach(normalizeStationLineColors);
+        if (isSecondarySideLineActive(value, side)) {
+            stations[1].lineColors = stations[1].lineColors.slice(0, MAX_SIDE_LINE_COLORS - 1);
+            const mainLimit = MAX_SIDE_LINE_COLORS - stations[1].lineColors.length;
+            stations[0].lineColors = stations[0].lineColors.slice(0, Math.max(1, mainLimit));
+        } else {
+            stations[0].lineColors = stations[0].lineColors.slice(0, MAX_SIDE_LINE_COLORS);
+        }
+        stations.forEach(station => {
+            station.lineColor = station.lineColors[0];
+        });
+    }
+
+    function normalizeFictionalSideLineColors(value) {
+        enforceFictionalSideLineColorLimit(value, "left");
+        enforceFictionalSideLineColorLimit(value, "right");
         return value;
     }
 
@@ -170,6 +219,7 @@
             ];
             value.cityMarks = [{ text: "苏", fill: true }];
             value.routeColors = ["#FFFFFF"];
+            normalizeFictionalSideLineColors(value);
             normalizeFictionalNumberingLists(value);
         }
         return value;
@@ -206,8 +256,10 @@
         if (!template.supportsTlc) {
             value.templateVersion = FICTIONAL_STATE_VERSION;
             value.current.showTlc = false;
+            value.black = normalizeFictionalColor(value.black, "#1A1A1A");
             normalizeFictionalNumberingLists(value);
-            value.routeColors = [value.routeColors[0] || "#FFFFFF"];
+            normalizeFictionalSideLineColors(value);
+            value.routeColors = [normalizeFictionalColor(value.routeColors[0], "#FFFFFF")];
         }
         return value;
     }
@@ -343,6 +395,18 @@
         document.querySelectorAll("[data-side-line-color-label]").forEach(label => {
             label.textContent = fictional ? "线路颜色" : "条带颜色";
         });
+        document.querySelectorAll("[data-jr-side-line-color]").forEach(field => {
+            field.hidden = fictional;
+            field.querySelectorAll("input, button, select").forEach(control => {
+                control.disabled = fictional;
+            });
+        });
+        document.querySelectorAll("[data-fictional-side-line-colors]").forEach(section => {
+            section.hidden = !fictional;
+            section.querySelectorAll("input, button, select").forEach(control => {
+                control.disabled = !fictional;
+            });
+        });
         const addRouteColorButton = document.getElementById("addRouteColorButton");
         addRouteColorButton.hidden = fictional;
         addRouteColorButton.disabled = fictional;
@@ -351,6 +415,10 @@
             field.querySelectorAll("input, button, select").forEach(control => {
                 control.disabled = !fictional;
             });
+        });
+        document.querySelectorAll("[data-color-transparent-action]").forEach(button => {
+            button.hidden = false;
+            button.disabled = false;
         });
         const routeHotspot = document.querySelector('[data-inspector="route"]');
         routeHotspot.hidden = fictional;
@@ -374,6 +442,7 @@
         saveState();
         activeTemplate = templateId;
         state = normalizeTemplateState(templateId, templateStates[templateId]);
+        getIccTransform().catch(error => console.error("ICC 色彩转换初始化失败。", error));
         syncBoardTypeOptions();
         updateTemplateUi();
         syncBoundFields();
@@ -406,6 +475,62 @@
         return match ? `#${match[1].toUpperCase()}` : null;
     }
 
+    function isTransparentColor(value) {
+        return String(value || "").trim().toLowerCase() === TRANSPARENT_COLOR;
+    }
+
+    function normalizeFictionalColor(value, fallback = "#000000") {
+        if (isTransparentColor(value)) return TRANSPARENT_COLOR;
+        return normalizeHex(value) || fallback;
+    }
+
+    function getColorInputValue(input) {
+        return input?.dataset.colorTransparent === "true" ? TRANSPARENT_COLOR : input?.value;
+    }
+
+    function getColorMemoryKey(input) {
+        if (!input) return null;
+        if (input.dataset.bind) return `bind:${input.dataset.bind}`;
+        if (input.dataset.listPath) {
+            return `list:${input.dataset.listPath}:${input.dataset.listIndex}:${input.dataset.listKey}`;
+        }
+        if (input.dataset.sideLineColorPath) {
+            return `side-line:${input.dataset.sideLineColorPath}:${input.dataset.sideLineColorIndex}`;
+        }
+        if (input.dataset.routeIndex !== undefined) return `route:${input.dataset.routeIndex}`;
+        return input.getAttribute("aria-label") ? `label:${input.getAttribute("aria-label")}` : null;
+    }
+
+    function rememberOpaqueColor(input, value) {
+        const hex = normalizeHex(value);
+        if (!input || !hex) return;
+        input.dataset.lastOpaqueColor = hex;
+        const key = getColorMemoryKey(input);
+        if (key) opaqueColorMemory.set(key, hex);
+    }
+
+    function getRememberedOpaqueColor(input) {
+        const key = getColorMemoryKey(input);
+        return normalizeHex(input?.dataset.lastOpaqueColor)
+            || normalizeHex(key ? opaqueColorMemory.get(key) : null)
+            || normalizeHex(input?.value)
+            || "#000000";
+    }
+
+    function setColorInputValue(input, value, fallback = "#000000") {
+        if (!input) return;
+        const transparent = isTransparentColor(value);
+        input.dataset.colorTransparent = String(transparent);
+        if (!transparent) {
+            input.value = normalizeHex(value) || normalizeHex(fallback) || "#000000";
+            rememberOpaqueColor(input, input.value);
+        } else {
+            const key = getColorMemoryKey(input);
+            const remembered = normalizeHex(key ? opaqueColorMemory.get(key) : null);
+            if (remembered) input.dataset.lastOpaqueColor = remembered;
+        }
+    }
+
     function hexToRgb(hex) {
         const normalized = normalizeHex(hex) || "#000000";
         return {
@@ -433,12 +558,78 @@
         };
     }
 
-    function cmykToHex(cyan, magenta, yellow, black) {
+    function fallbackCmykToHex(cyan, magenta, yellow, black) {
         const c = clamp(cyan, 0, 100) / 100;
         const m = clamp(magenta, 0, 100) / 100;
         const y = clamp(yellow, 0, 100) / 100;
         const k = clamp(black, 0, 100) / 100;
-        return rgbToHex(255 * (1 - c) * (1 - k), 255 * (1 - m) * (1 - k), 255 * (1 - y) * (1 - k));
+        return rgbToHex(
+            255 * (1 - c) * (1 - k),
+            255 * (1 - m) * (1 - k),
+            255 * (1 - y) * (1 - k)
+        );
+    }
+
+    async function fetchProfileBytes(url) {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`无法加载 ICC 配置文件：${url}`);
+        return new Uint8Array(await response.arrayBuffer());
+    }
+
+    async function createIccTransform() {
+        const bindings = await import(LCMS_MODULE_URL);
+        const lcms = await bindings.instantiate({
+            locateFile: name => new URL(name === "lcms.wasm" ? LCMS_WASM_URL : name, document.baseURI).href
+        });
+        const [cmykBytes, rgbBytes] = await Promise.all([
+            fetchProfileBytes(CMYK_PROFILE_URL),
+            fetchProfileBytes(RGB_PROFILE_URL)
+        ]);
+        const cmykProfile = lcms.cmsOpenProfileFromMem(cmykBytes, cmykBytes.length);
+        const rgbProfile = lcms.cmsOpenProfileFromMem(rgbBytes, rgbBytes.length);
+        if (!cmykProfile || !rgbProfile) {
+            if (cmykProfile) lcms.cmsCloseProfile(cmykProfile);
+            if (rgbProfile) lcms.cmsCloseProfile(rgbProfile);
+            throw new Error("无法打开颜色选择器使用的 ICC 配置文件");
+        }
+        const flags = bindings.cmsFLAGS_NOCACHE
+            | bindings.cmsFLAGS_HIGHRESPRECALC
+            | bindings.cmsFLAGS_NOOPTIMIZE;
+        const transform = lcms.cmsCreateTransform(
+            cmykProfile,
+            bindings.TYPE_CMYK_16,
+            rgbProfile,
+            bindings.TYPE_RGB_16,
+            bindings.INTENT_RELATIVE_COLORIMETRIC,
+            flags
+        );
+        lcms.cmsCloseProfile(cmykProfile);
+        lcms.cmsCloseProfile(rgbProfile);
+        if (!transform) throw new Error("无法创建 CoatedFOGRA39 到 sRGB2014 的 ICC 转换");
+        return { lcms, transform };
+    }
+
+    function getIccTransform() {
+        if (!iccTransformPromise) {
+            iccTransformPromise = createIccTransform().catch(error => {
+                iccTransformPromise = null;
+                throw error;
+            });
+        }
+        return iccTransformPromise;
+    }
+
+    async function cmykToHex(cyan, magenta, yellow, black) {
+        const channels = [cyan, magenta, yellow, black].map(value => clamp(value, 0, 100));
+        try {
+            const { lcms, transform } = await getIccTransform();
+            const input = new Uint16Array(channels.map(value => Math.round(value * 65535 / 100)));
+            const output = lcms.cmsDoTransform(transform, input, 1);
+            return rgbToHex(...Array.from(output.slice(0, 3), value => value * 255 / 65535));
+        } catch (error) {
+            console.error("ICC CMYK 转换失败，已临时回退到基础 CMYK 转换。", error);
+            return fallbackCmykToHex(...channels);
+        }
     }
 
     function rgbToHsv({ r, g, b }) {
@@ -521,18 +712,26 @@
         popover.style.top = `${Math.round(top)}px`;
     }
 
-    function syncColorEditor(editor, value) {
+    function syncColorEditor(editor, value, preserveGroup = null) {
         if (!editor) return;
-        const hex = normalizeHex(value) || "#000000";
+        const colorInput = editor.querySelector('input[type="color"]');
+        const transparent = isTransparentColor(value);
+        const hex = normalizeHex(value) || normalizeHex(colorInput?.value) || "#000000";
         const rgb = hexToRgb(hex);
         const cmyk = rgbToCmyk(rgb);
         const hsv = rgbToHsv(rgb);
         const swatch = editor.querySelector(".color-swatch");
         const summary = editor.querySelector(".color-trigger-value");
         const hexInput = editor.querySelector("[data-color-hex]");
-        if (swatch) swatch.style.backgroundColor = hex;
-        if (summary) summary.textContent = hex;
+        editor.classList.toggle("is-transparent", transparent);
+        if (swatch) swatch.style.backgroundColor = transparent ? "transparent" : hex;
+        if (summary) summary.textContent = transparent ? "透明" : hex;
         if (hexInput) hexInput.value = hex;
+        const transparentButton = editor.querySelector("[data-color-transparent-action]");
+        if (transparentButton) {
+            transparentButton.setAttribute("aria-pressed", String(transparent));
+            transparentButton.textContent = transparent ? "恢复原颜色" : "透明（镂空）";
+        }
         const hueInput = editor.querySelector("[data-color-hue]");
         const saturationValue = editor.querySelector("[data-color-sv]");
         const pickerCursor = editor.querySelector(".color-picker-cursor");
@@ -548,22 +747,47 @@
             pickerCursor.style.left = `${hsv.s}%`;
             pickerCursor.style.top = `${100 - hsv.v}%`;
         }
-        Object.entries(rgb).forEach(([channel, channelValue]) => {
-            const input = editor.querySelector(`[data-color-rgb="${channel}"]`);
-            if (input) input.value = channelValue;
-        });
-        Object.entries(cmyk).forEach(([channel, channelValue]) => {
-            const input = editor.querySelector(`[data-color-cmyk="${channel}"]`);
-            if (input) input.value = channelValue;
-        });
+        if (preserveGroup !== "rgb") {
+            Object.entries(rgb).forEach(([channel, channelValue]) => {
+                const input = editor.querySelector(`[data-color-rgb="${channel}"]`);
+                if (input) input.value = channelValue;
+            });
+        }
+        if (preserveGroup !== "cmyk") {
+            Object.entries(cmyk).forEach(([channel, channelValue]) => {
+                const input = editor.querySelector(`[data-color-cmyk="${channel}"]`);
+                if (input) input.value = channelValue;
+            });
+        }
     }
 
-    function applyEditorColor(editor, value) {
+    function applyEditorColor(editor, value, preserveGroup = null) {
         const colorInput = editor.querySelector('input[type="color"]');
         const hex = normalizeHex(value);
         if (!colorInput || !hex) return;
+        colorInput.dataset.colorTransparent = "false";
         colorInput.value = hex;
-        syncColorEditor(editor, hex);
+        rememberOpaqueColor(colorInput, hex);
+        if (preserveGroup) editor.dataset.preserveColorGroup = preserveGroup;
+        colorInput.dispatchEvent(new Event("input", { bubbles: true }));
+        delete editor.dataset.preserveColorGroup;
+    }
+
+    function applyEditorTransparency(editor) {
+        const colorInput = editor.querySelector('input[type="color"]');
+        if (!colorInput) return;
+        if (colorInput.dataset.colorTransparent === "true") {
+            const restoredColor = getRememberedOpaqueColor(colorInput);
+            colorInput.dataset.colorTransparent = "false";
+            colorInput.value = restoredColor;
+            rememberOpaqueColor(colorInput, restoredColor);
+            syncColorEditor(editor, restoredColor);
+            colorInput.dispatchEvent(new Event("input", { bubbles: true }));
+            return;
+        }
+        rememberOpaqueColor(colorInput, colorInput.value);
+        colorInput.dataset.colorTransparent = "true";
+        syncColorEditor(editor, TRANSPARENT_COLOR);
         colorInput.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
@@ -586,6 +810,13 @@
     function enhanceColorInputs(root = document) {
         root.querySelectorAll('input[type="color"]:not([data-color-enhanced])').forEach(colorInput => {
             colorInput.dataset.colorEnhanced = "true";
+            if (colorInput.dataset.colorTransparent === "true") {
+                const key = getColorMemoryKey(colorInput);
+                const remembered = normalizeHex(key ? opaqueColorMemory.get(key) : null);
+                if (remembered) colorInput.dataset.lastOpaqueColor = remembered;
+            } else {
+                rememberOpaqueColor(colorInput, colorInput.value);
+            }
             const editor = document.createElement("div");
             editor.className = "color-editor";
             if (colorInput.classList.contains("numbering-marker-color-input")) {
@@ -671,13 +902,22 @@
             ["c", "m", "y", "k"].forEach(channel => cmykChannels.append(createChannelInput("colorCmyk", channel, 100)));
             cmykRow.append(cmykName, cmykChannels);
 
-            popover.append(pickerRow, hexRow, rgbRow, cmykRow);
+            const transparentButton = document.createElement("button");
+            transparentButton.type = "button";
+            transparentButton.className = "color-transparent-button";
+            transparentButton.dataset.colorTransparentAction = "true";
+            transparentButton.textContent = "透明（镂空）";
+            transparentButton.setAttribute("aria-pressed", "false");
+            transparentButton.hidden = false;
+            transparentButton.disabled = false;
+
+            popover.append(pickerRow, hexRow, rgbRow, cmykRow, transparentButton);
             colorInput.classList.add("native-color-input");
             colorInput.hidden = true;
             colorInput.tabIndex = -1;
             colorInput.setAttribute("aria-hidden", "true");
             editor.append(trigger, popover, colorInput);
-            syncColorEditor(editor, colorInput.value);
+            syncColorEditor(editor, getColorInputValue(colorInput));
 
             let activePickerPointer = null;
             const updateSaturationValue = event => {
@@ -716,8 +956,15 @@
                     editor.classList.remove("open-above");
                 }
             });
-            colorInput.addEventListener("input", () => syncColorEditor(editor, colorInput.value));
-            editor.addEventListener("input", event => {
+            transparentButton.addEventListener("click", event => {
+                event.preventDefault();
+                event.stopPropagation();
+                applyEditorTransparency(editor);
+            });
+            colorInput.addEventListener("input", () => {
+                syncColorEditor(editor, getColorInputValue(colorInput), editor.dataset.preserveColorGroup || null);
+            });
+            editor.addEventListener("input", async event => {
                 const target = event.target;
                 if (target.dataset.colorHex !== undefined) {
                     event.stopPropagation();
@@ -726,11 +973,18 @@
                 } else if (target.dataset.colorRgb !== undefined) {
                     event.stopPropagation();
                     const channels = ["r", "g", "b"].map(channel => editor.querySelector(`[data-color-rgb="${channel}"]`).value);
-                    if (channels.every(value => value !== "")) applyEditorColor(editor, rgbToHex(...channels));
+                    if (channels.every(value => value !== "")) applyEditorColor(editor, rgbToHex(...channels), "rgb");
                 } else if (target.dataset.colorCmyk !== undefined) {
                     event.stopPropagation();
                     const channels = ["c", "m", "y", "k"].map(channel => editor.querySelector(`[data-color-cmyk="${channel}"]`).value);
-                    if (channels.every(value => value !== "")) applyEditorColor(editor, cmykToHex(...channels));
+                    if (channels.every(value => value !== "")) {
+                        const requestId = String(++cmykConversionRequestId);
+                        editor.dataset.cmykConversionRequestId = requestId;
+                        const converted = await cmykToHex(...channels);
+                        if (editor.dataset.cmykConversionRequestId === requestId) {
+                            applyEditorColor(editor, converted, "cmyk");
+                        }
+                    }
                 } else if (target.dataset.colorHue !== undefined) {
                     event.stopPropagation();
                     applyEditorColor(
@@ -744,8 +998,9 @@
 
     function setFieldValue(field, value) {
         if (field.type === "checkbox") field.checked = Boolean(value);
+        else if (field.type === "color") setColorInputValue(field, value);
         else field.value = value ?? "";
-        if (field.type === "color") syncColorEditor(field.closest(".color-editor"), field.value);
+        if (field.type === "color") syncColorEditor(field.closest(".color-editor"), getColorInputValue(field));
     }
 
     function syncBoundPeers(path, source) {
@@ -863,7 +1118,7 @@
                 const colorInput = document.createElement("input");
                 colorInput.type = "color";
                 colorInput.className = fictional ? "numbering-marker-color-input" : "";
-                colorInput.value = numbering.color;
+                setColorInputValue(colorInput, numbering.color, LINE_TWO_GREEN);
                 colorInput.setAttribute("aria-label", `编号颜色 ${index + 1}`);
                 colorInput.dataset.listPath = path;
                 colorInput.dataset.listIndex = index;
@@ -910,7 +1165,7 @@
                     const textColorInput = document.createElement("input");
                     textColorInput.type = "color";
                     textColorInput.className = "numbering-text-color-input";
-                    textColorInput.value = numbering.textColor;
+                    setColorInputValue(textColorInput, numbering.textColor, state.black);
                     textColorInput.setAttribute("aria-label", `编号文字颜色 ${index + 1}`);
                     textColorInput.dataset.listPath = path;
                     textColorInput.dataset.listIndex = index;
@@ -935,6 +1190,77 @@
             enhanceColorInputs(container);
         });
         updateNumberingAddButtons();
+    }
+
+    function getSideLineColorDetails(path) {
+        const match = /^(left|right)Stations\.(0|1)$/.exec(path);
+        if (!match) return null;
+        const side = match[1];
+        const stationIndex = Number(match[2]);
+        const stations = side === "left" ? state.leftStations : state.rightStations;
+        return {
+            side,
+            stationIndex,
+            station: stations[stationIndex],
+            stations,
+            secondaryActive: isSecondarySideLineActive(state, side)
+        };
+    }
+
+    function getActiveSideLineColorCount(side) {
+        const stations = side === "left" ? state.leftStations : state.rightStations;
+        const stationCount = isSecondarySideLineActive(state, side) ? 2 : 1;
+        return stations
+            .slice(0, stationCount)
+            .reduce((total, station) => total + normalizeStationLineColors(station).length, 0);
+    }
+
+    function canAddSideLineColor(path) {
+        if (activeTemplate !== "fictional") return false;
+        const details = getSideLineColorDetails(path);
+        if (!details || (details.stationIndex === 1 && !details.secondaryActive)) return false;
+        return getActiveSideLineColorCount(details.side) < MAX_SIDE_LINE_COLORS;
+    }
+
+    function updateSideLineColorAddButtons() {
+        document.querySelectorAll("[data-add-side-line-color]").forEach(button => {
+            button.disabled = !canAddSideLineColor(button.dataset.addSideLineColor);
+        });
+    }
+
+    function renderFictionalSideLineColors() {
+        document.querySelectorAll("[data-side-line-color-list]").forEach(container => {
+            container.replaceChildren();
+            if (activeTemplate !== "fictional") return;
+            const path = container.dataset.sideLineColorList;
+            const station = getPath(path);
+            normalizeStationLineColors(station).forEach((color, index) => {
+                const row = document.createElement("div");
+                row.className = "repeat-row side-line-color-row";
+
+                const label = document.createElement("span");
+                label.className = "row-label";
+                label.textContent = `线路${index + 1}`;
+
+                const input = document.createElement("input");
+                input.type = "color";
+                setColorInputValue(input, color, LINE_TWO_GREEN);
+                input.setAttribute("aria-label", `${path} 线路颜色 ${index + 1}`);
+                input.dataset.sideLineColorPath = path;
+                input.dataset.sideLineColorIndex = index;
+
+                const remove = createButton("×", "icon-button", {
+                    removeSideLineColor: path,
+                    removeSideLineColorIndex: index
+                });
+                remove.disabled = station.lineColors.length <= 1;
+                remove.setAttribute("aria-label", `删除共线线路 ${index + 1}`);
+                row.append(label, input, remove);
+                container.append(row);
+            });
+            enhanceColorInputs(container);
+        });
+        updateSideLineColorAddButtons();
     }
 
     function renderMarks() {
@@ -995,7 +1321,7 @@
             label.textContent = `线路${index + 1}`;
             const input = document.createElement("input");
             input.type = "color";
-            input.value = color;
+            setColorInputValue(input, color, LINE_TWO_GREEN);
             input.setAttribute("aria-label", `中央线路色 ${index + 1}`);
             input.dataset.routeIndex = index;
             row.append(label, input);
@@ -1012,6 +1338,7 @@
 
     function renderDynamicControls() {
         renderNumberingLists();
+        renderFictionalSideLineColors();
         renderMarks();
         renderRouteColors();
     }
@@ -1122,6 +1449,14 @@
 
     function createBandPath(ctx, data, width, lineTop, lineBottom, lineY, branchStart) {
         const fictionalArrow = activeTemplate === "fictional";
+        const upperBranchTop = lineTop - 65;
+        const upperBranchBottom = lineTop + 12;
+        const lowerBranchBottom = lineBottom + 65;
+        const lowerBranchTop = lineBottom - 12;
+        const fictionalMiterSpan = 77 * Math.SQRT2;
+        const branchInnerOffset = fictionalArrow ? 65 + fictionalMiterSpan - 77 : 100;
+        const branchJoinOffset = fictionalArrow ? fictionalMiterSpan - 50 : 60;
+        const fictionalBranchArrowInset = 53;
         const sharedRightShift = getSharedBranchShift(data, data.rightStations, data.branchRight);
         const sharedLeftShift = getSharedBranchShift(data, data.leftStations, data.branchLeft);
         const rightTopShift = data.branchRight ? sharedRightShift : getSideStationShift(data, data.rightStations[0], false);
@@ -1131,33 +1466,33 @@
         ctx.beginPath();
         if (data.branchRight) {
             ctx.moveTo(width - branchStart, lineTop);
-            ctx.lineTo(width - branchStart + 65, lineTop - 65);
+            ctx.lineTo(width - branchStart + 65, upperBranchTop);
             if (data.rightStations[0].go) {
-                ctx.lineTo(width - 130 - rightTopShift, lineTop - 65);
+                ctx.lineTo(width - 130 - rightTopShift, upperBranchTop);
                 ctx.lineTo(
-                    fictionalArrow ? width - 53 - rightTopShift : width - 50 - rightTopShift,
-                    fictionalArrow ? lineTop + 12 : lineTop - 25
+                    fictionalArrow ? width - fictionalBranchArrowInset - rightTopShift : width - 50 - rightTopShift,
+                    fictionalArrow ? upperBranchBottom : lineTop - 25
                 );
-                ctx.lineTo(width - 130 - rightTopShift, lineTop + 12);
+                ctx.lineTo(width - 130 - rightTopShift, upperBranchBottom);
             } else {
-                ctx.lineTo(width, lineTop - 65);
-                ctx.lineTo(width, lineTop + 12);
+                ctx.lineTo(width, upperBranchTop);
+                ctx.lineTo(width, upperBranchBottom);
             }
-            ctx.lineTo(width - branchStart + 100, lineTop + 12);
-            ctx.lineTo(width - branchStart + 60, lineY);
-            ctx.lineTo(width - branchStart + 100, lineBottom - 12);
+            ctx.lineTo(width - branchStart + branchInnerOffset, upperBranchBottom);
+            ctx.lineTo(width - branchStart + branchJoinOffset, lineY);
+            ctx.lineTo(width - branchStart + branchInnerOffset, lowerBranchTop);
             if (data.rightStations[1].go) {
-                ctx.lineTo(width - 130 - rightBottomShift, lineBottom - 12);
+                ctx.lineTo(width - 130 - rightBottomShift, lowerBranchTop);
                 ctx.lineTo(
-                    fictionalArrow ? width - 53 - rightBottomShift : width - 50 - rightBottomShift,
-                    fictionalArrow ? lineBottom + 65 : lineBottom + 25
+                    fictionalArrow ? width - fictionalBranchArrowInset - rightBottomShift : width - 50 - rightBottomShift,
+                    fictionalArrow ? lowerBranchBottom : lineBottom + 25
                 );
-                ctx.lineTo(width - 130 - rightBottomShift, lineBottom + 65);
+                ctx.lineTo(width - 130 - rightBottomShift, lowerBranchBottom);
             } else {
-                ctx.lineTo(width, lineBottom - 12);
-                ctx.lineTo(width, lineBottom + 65);
+                ctx.lineTo(width, lowerBranchTop);
+                ctx.lineTo(width, lowerBranchBottom);
             }
-            ctx.lineTo(width - branchStart + 65, lineBottom + 65);
+            ctx.lineTo(width - branchStart + 65, lowerBranchBottom);
             ctx.lineTo(width - branchStart, lineBottom);
         } else if (data.rightStations[0].go) {
             ctx.moveTo(width - 160 - rightTopShift, lineTop);
@@ -1173,33 +1508,33 @@
 
         if (data.branchLeft) {
             ctx.lineTo(branchStart, lineBottom);
-            ctx.lineTo(branchStart - 65, lineBottom + 65);
+            ctx.lineTo(branchStart - 65, lowerBranchBottom);
             if (data.leftStations[1].go) {
-                ctx.lineTo(130 + leftBottomShift, lineBottom + 65);
+                ctx.lineTo(130 + leftBottomShift, lowerBranchBottom);
                 ctx.lineTo(
-                    fictionalArrow ? 53 + leftBottomShift : 50 + leftBottomShift,
-                    fictionalArrow ? lineBottom + 65 : lineBottom + 25
+                    fictionalArrow ? fictionalBranchArrowInset + leftBottomShift : 50 + leftBottomShift,
+                    fictionalArrow ? lowerBranchBottom : lineBottom + 25
                 );
-                ctx.lineTo(130 + leftBottomShift, lineBottom - 12);
+                ctx.lineTo(130 + leftBottomShift, lowerBranchTop);
             } else {
-                ctx.lineTo(0, lineBottom + 65);
-                ctx.lineTo(0, lineBottom - 12);
+                ctx.lineTo(0, lowerBranchBottom);
+                ctx.lineTo(0, lowerBranchTop);
             }
-            ctx.lineTo(branchStart - 100, lineBottom - 12);
-            ctx.lineTo(branchStart - 60, lineY);
-            ctx.lineTo(branchStart - 100, lineTop + 12);
+            ctx.lineTo(branchStart - branchInnerOffset, lowerBranchTop);
+            ctx.lineTo(branchStart - branchJoinOffset, lineY);
+            ctx.lineTo(branchStart - branchInnerOffset, upperBranchBottom);
             if (data.leftStations[0].go) {
-                ctx.lineTo(130 + leftTopShift, lineTop + 12);
+                ctx.lineTo(130 + leftTopShift, upperBranchBottom);
                 ctx.lineTo(
-                    fictionalArrow ? 53 + leftTopShift : 50 + leftTopShift,
-                    fictionalArrow ? lineTop + 12 : lineTop - 25
+                    fictionalArrow ? fictionalBranchArrowInset + leftTopShift : 50 + leftTopShift,
+                    fictionalArrow ? upperBranchBottom : lineTop - 25
                 );
-                ctx.lineTo(130 + leftTopShift, lineTop - 65);
+                ctx.lineTo(130 + leftTopShift, upperBranchTop);
             } else {
-                ctx.lineTo(0, lineTop + 12);
-                ctx.lineTo(0, lineTop - 65);
+                ctx.lineTo(0, upperBranchBottom);
+                ctx.lineTo(0, upperBranchTop);
             }
-            ctx.lineTo(branchStart - 65, lineTop - 65);
+            ctx.lineTo(branchStart - 65, upperBranchTop);
             ctx.lineTo(branchStart, lineTop);
         } else if (data.leftStations[0].go) {
             ctx.lineTo(160 + leftTopShift, lineBottom);
@@ -1260,54 +1595,269 @@
         ctx.closePath();
     }
 
+    function getStationLineColorsForDrawing(station) {
+        if (activeTemplate === "fictional" && Array.isArray(station.lineColors) && station.lineColors.length) {
+            return station.lineColors;
+        }
+        return [station.lineColor];
+    }
+
+    function fillColorRect(ctx, color, x, y, width, height) {
+        if (isTransparentColor(color)) {
+            ctx.clearRect(x, y, width, height);
+            return;
+        }
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, width, height);
+    }
+
+    function fillCurrentPathColor(ctx, color) {
+        ctx.save();
+        if (isTransparentColor(color)) {
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.fillStyle = "#000000";
+        } else {
+            ctx.fillStyle = color;
+        }
+        ctx.fill();
+        ctx.restore();
+    }
+
+    function fillLineColorBands(ctx, colors, x, y, width, height) {
+        const colorHeight = height / colors.length;
+        colors.forEach((color, index) => {
+            fillColorRect(ctx, color, x, y + colorHeight * index, width, Math.ceil(colorHeight));
+        });
+    }
+
+    function fillStationLineColorBands(ctx, station, x, y, width, height) {
+        fillLineColorBands(ctx, getStationLineColorsForDrawing(station), x, y, width, height);
+    }
+
+    function interpolatePoint(start, end, amount) {
+        return {
+            x: start.x + (end.x - start.x) * amount,
+            y: start.y + (end.y - start.y) * amount
+        };
+    }
+
+    function fillBentLineColorBands(ctx, station, outerStart, outerEnd, innerEnd, innerStart) {
+        const colors = getStationLineColorsForDrawing(station);
+        colors.forEach((color, index) => {
+            const startAmount = index / colors.length;
+            const endAmount = (index + 1) / colors.length;
+            const firstStart = interpolatePoint(outerStart, innerStart, startAmount);
+            const firstEnd = interpolatePoint(outerEnd, innerEnd, startAmount);
+            const secondEnd = interpolatePoint(outerEnd, innerEnd, endAmount);
+            const secondStart = interpolatePoint(outerStart, innerStart, endAmount);
+            ctx.beginPath();
+            ctx.moveTo(firstStart.x, firstStart.y);
+            ctx.lineTo(firstEnd.x, firstEnd.y);
+            ctx.lineTo(secondEnd.x, secondEnd.y);
+            ctx.lineTo(secondStart.x, secondStart.y);
+            ctx.closePath();
+            fillCurrentPathColor(ctx, color);
+        });
+    }
+
+    function fillMergedBranchTrunkColors(ctx, data, width, lineTop, lineBottom, branchStart, align) {
+        const isRight = align === "right";
+        const half = width / 2;
+        const start = isRight ? width - branchStart : branchStart;
+        const stations = isRight ? data.rightStations : data.leftStations;
+        const x = isRight ? half : start;
+        const trunkWidth = isRight ? start - half : half - start;
+        const branchHalfHeight = (lineBottom - lineTop) / 2;
+        fillStationLineColorBands(ctx, stations[0], x, lineTop, trunkWidth, branchHalfHeight);
+        fillStationLineColorBands(ctx, stations[1], x, lineTop + branchHalfHeight, trunkWidth, branchHalfHeight);
+    }
+
+    function fillMiteredBranchColorBands(ctx, station, start, direction, incomingTop, incomingHeight, outgoingTop, outgoingHeight) {
+        const colors = getStationLineColorsForDrawing(station);
+        const diagonalSpan = outgoingHeight * Math.SQRT2;
+        const turnRange = diagonalSpan - incomingHeight;
+        const outgoingRange = diagonalSpan - outgoingHeight;
+        const bendsUpward = outgoingTop < incomingTop;
+        const getBoundary = amount => {
+            const incomingY = incomingTop + incomingHeight * amount;
+            const outgoingY = outgoingTop + outgoingHeight * amount;
+            const turnDistance = bendsUpward
+                ? turnRange * amount
+                : turnRange * (1 - amount);
+            const outgoingDistance = 65 + (bendsUpward
+                ? outgoingRange * amount
+                : outgoingRange * (1 - amount));
+            return {
+                incoming: { x: start, y: incomingY },
+                turn: { x: start + direction * turnDistance, y: incomingY },
+                outgoing: { x: start + direction * outgoingDistance, y: outgoingY }
+            };
+        };
+        colors.forEach((color, index) => {
+            const first = getBoundary(index / colors.length);
+            const second = getBoundary((index + 1) / colors.length);
+            ctx.beginPath();
+            ctx.moveTo(first.incoming.x, first.incoming.y);
+            ctx.lineTo(first.turn.x, first.turn.y);
+            ctx.lineTo(first.outgoing.x, first.outgoing.y);
+            ctx.lineTo(second.outgoing.x, second.outgoing.y);
+            ctx.lineTo(second.turn.x, second.turn.y);
+            ctx.lineTo(second.incoming.x, second.incoming.y);
+            ctx.closePath();
+            fillCurrentPathColor(ctx, color);
+        });
+    }
+
+    function fillDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, align) {
+        const isRight = align === "right";
+        const direction = isRight ? 1 : -1;
+        const start = isRight ? width - branchStart : branchStart;
+        const stations = isRight ? data.rightStations : data.leftStations;
+        const fictional = activeTemplate === "fictional";
+        if (fictional) {
+            fillMiteredBranchColorBands(ctx, stations[0], start, direction, lineTop, 50, lineTop - 65, 77);
+            fillMiteredBranchColorBands(ctx, stations[1], start, direction, lineY, 50, lineBottom - 12, 77);
+            return;
+        }
+        const upperTrunkInner = { x: start + direction * 60, y: lineY };
+        const lowerTrunkOuter = { x: start + direction * 60, y: lineY };
+        fillBentLineColorBands(
+            ctx,
+            stations[0],
+            { x: start, y: lineTop },
+            { x: start + direction * 65, y: lineTop - 65 },
+            { x: start + direction * 100, y: lineTop + 12 },
+            upperTrunkInner
+        );
+        fillBentLineColorBands(
+            ctx,
+            stations[1],
+            lowerTrunkOuter,
+            { x: start + direction * 100, y: lineBottom - 12 },
+            { x: start + direction * 65, y: lineBottom + 65 },
+            { x: start, y: lineBottom }
+        );
+    }
+
+    function fillSpurLineColorBands(ctx, data, width, lineTop, branchStart, align) {
+        const isRight = align === "right";
+        const direction = isRight ? 1 : -1;
+        const station = isRight ? data.rightStations[1] : data.leftStations[1];
+        const colors = getStationLineColorsForDrawing(station);
+        const top = lineTop - 170;
+        const bottom = lineTop - 95;
+        const x = isRight ? width / 2 : 0;
+        const start = isRight ? width - branchStart : branchStart;
+        ctx.save();
+        createSpurBandPath(ctx, data, width, lineTop, branchStart, align);
+        ctx.clip();
+        fillColorRect(ctx, colors[colors.length - 1], x, top, width / 2, lineTop - top + 1);
+        fillStationLineColorBands(ctx, station, x, top, width / 2, bottom - top);
+        fillBentLineColorBands(
+            ctx,
+            station,
+            { x: start, y: lineTop },
+            { x: start + direction * 168, y: top },
+            { x: start + direction * 194, y: bottom },
+            { x: start + direction * 102, y: lineTop }
+        );
+        ctx.restore();
+    }
+
+    function drawJrLineBands(ctx, data, width, lineTop, lineBottom, lineY, half, branchStart) {
+        ctx.save();
+        createBandPath(ctx, data, width, lineTop, lineBottom, lineY, branchStart);
+        ctx.clip();
+        if (data.branchRight) {
+            fillColorRect(ctx, data.rightStations[0].lineColor, half, lineTop - 65, half, 115);
+            fillColorRect(ctx, data.rightStations[1].lineColor, half, lineY, half, 115);
+        } else {
+            fillColorRect(ctx, data.rightStations[0].lineColor, half, lineTop, half, lineBottom - lineTop);
+        }
+        if (data.branchLeft) {
+            fillColorRect(ctx, data.leftStations[0].lineColor, 0, lineTop - 65, half, 115);
+            fillColorRect(ctx, data.leftStations[1].lineColor, 0, lineY, half, 115);
+        } else {
+            fillColorRect(ctx, data.leftStations[0].lineColor, 0, lineTop, half, lineBottom - lineTop);
+        }
+        const colorHeight = (lineBottom - lineTop) / data.routeColors.length;
+        data.routeColors.forEach((color, index) => {
+            fillColorRect(
+                ctx,
+                color,
+                half - (lineBottom - lineTop) / 2,
+                lineTop + colorHeight * index,
+                lineBottom - lineTop,
+                Math.ceil(colorHeight)
+            );
+        });
+        ctx.restore();
+        if (getSideLayout(data, "left") === "spur") {
+            createSpurBandPath(ctx, data, width, lineTop, branchStart, "left");
+            fillCurrentPathColor(ctx, data.leftStations[1].lineColor);
+        }
+        if (getSideLayout(data, "right") === "spur") {
+            createSpurBandPath(ctx, data, width, lineTop, branchStart, "right");
+            fillCurrentPathColor(ctx, data.rightStations[1].lineColor);
+        }
+    }
+
     function drawLineBands(ctx, data, width, height) {
         const half = width / 2;
         const lineY = height / 2 + 80;
         const lineHeight = 100;
         const lineTop = lineY - lineHeight / 2;
         const lineBottom = lineY + lineHeight / 2;
+        const fictionalDoubleBranch = activeTemplate === "fictional";
+        const branchBandHeight = 65 + 12;
+        const upperBranchTop = lineTop - 65;
+        const lowerBranchTop = lineBottom - 12;
         const branchStart = Math.min(620, half - lineHeight);
+
+        if (activeTemplate !== "fictional") {
+            drawJrLineBands(ctx, data, width, lineTop, lineBottom, lineY, half, branchStart);
+            return { half, lineY, lineTop, lineBottom, branchStart, height };
+        }
 
         ctx.save();
         createBandPath(ctx, data, width, lineTop, lineBottom, lineY, branchStart);
         ctx.clip();
         if (data.branchRight) {
-            ctx.fillStyle = data.rightStations[0].lineColor;
-            ctx.fillRect(half, lineTop - 65, half, 115);
-            ctx.fillStyle = data.rightStations[1].lineColor;
-            ctx.fillRect(half, lineY, half, 115);
+            const branchStraightStart = fictionalDoubleBranch ? width - branchStart + 65 : half;
+            fillStationLineColorBands(ctx, data.rightStations[0], branchStraightStart, upperBranchTop, width - branchStraightStart, branchBandHeight);
+            fillStationLineColorBands(ctx, data.rightStations[1], branchStraightStart, lowerBranchTop, width - branchStraightStart, branchBandHeight);
+            if (activeTemplate === "fictional") {
+                fillMergedBranchTrunkColors(ctx, data, width, lineTop, lineBottom, branchStart, "right");
+            }
         } else {
-            ctx.fillStyle = data.rightStations[0].lineColor;
-            ctx.fillRect(half, lineTop, half, lineHeight);
+            fillStationLineColorBands(ctx, data.rightStations[0], half, lineTop, half, lineHeight);
         }
         if (data.branchLeft) {
-            ctx.fillStyle = data.leftStations[0].lineColor;
-            ctx.fillRect(0, lineTop - 65, half, 115);
-            ctx.fillStyle = data.leftStations[1].lineColor;
-            ctx.fillRect(0, lineY, half, 115);
+            const branchStraightWidth = fictionalDoubleBranch ? branchStart - 65 : half;
+            fillStationLineColorBands(ctx, data.leftStations[0], 0, upperBranchTop, branchStraightWidth, branchBandHeight);
+            fillStationLineColorBands(ctx, data.leftStations[1], 0, lowerBranchTop, branchStraightWidth, branchBandHeight);
+            if (activeTemplate === "fictional") {
+                fillMergedBranchTrunkColors(ctx, data, width, lineTop, lineBottom, branchStart, "left");
+            }
         } else {
-            ctx.fillStyle = data.leftStations[0].lineColor;
-            ctx.fillRect(0, lineTop, half, lineHeight);
+            fillStationLineColorBands(ctx, data.leftStations[0], 0, lineTop, half, lineHeight);
+        }
+        if (data.branchRight) {
+            fillDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, "right");
+        }
+        if (data.branchLeft) {
+            fillDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, "left");
         }
         const colorHeight = lineHeight / data.routeColors.length;
         data.routeColors.forEach((color, index) => {
-            ctx.fillStyle = color;
-            ctx.fillRect(half - lineHeight / 2, lineTop + colorHeight * index, lineHeight, Math.ceil(colorHeight));
+            fillColorRect(ctx, color, half - lineHeight / 2, lineTop + colorHeight * index, lineHeight, Math.ceil(colorHeight));
         });
         ctx.restore();
         if (getSideLayout(data, "left") === "spur") {
-            ctx.save();
-            ctx.fillStyle = data.leftStations[1].lineColor;
-            createSpurBandPath(ctx, data, width, lineTop, branchStart, "left");
-            ctx.fill();
-            ctx.restore();
+            fillSpurLineColorBands(ctx, data, width, lineTop, branchStart, "left");
         }
         if (getSideLayout(data, "right") === "spur") {
-            ctx.save();
-            ctx.fillStyle = data.rightStations[1].lineColor;
-            createSpurBandPath(ctx, data, width, lineTop, branchStart, "right");
-            ctx.fill();
-            ctx.restore();
+            fillSpurLineColorBands(ctx, data, width, lineTop, branchStart, "right");
         }
         return { half, lineY, lineTop, lineBottom, branchStart, height };
     }
@@ -1968,7 +2518,9 @@
     form.addEventListener("input", event => {
         const target = event.target;
         if (target.dataset.bind) {
-            let value = target.type === "checkbox" ? target.checked : target.value;
+            let value = target.type === "checkbox"
+                ? target.checked
+                : (target.type === "color" ? getColorInputValue(target) : target.value);
             if (target.dataset.bind === "current.tlc") {
                 value = value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 3);
                 target.value = value;
@@ -1984,6 +2536,16 @@
             if (exclusiveBranch && value) {
                 state[exclusiveBranch] = false;
                 syncBoundPeers(exclusiveBranch, null);
+            }
+            const sideLayout = {
+                branchLeft: "left",
+                spurLeft: "left",
+                branchRight: "right",
+                spurRight: "right"
+            }[target.dataset.bind];
+            if (activeTemplate === "fictional" && sideLayout) {
+                enforceFictionalSideLineColorLimit(state, sideLayout);
+                renderFictionalSideLineColors();
             }
             if ((target.dataset.bind === "spurLeft" || target.dataset.bind === "spurRight") && value) {
                 state.showNumbering = false;
@@ -2003,13 +2565,19 @@
                 renderNumberingLists();
             }
         } else if (target.dataset.listPath) {
-            const value = target.type === "checkbox" ? target.checked : target.value;
+            const value = target.type === "checkbox"
+                ? target.checked
+                : (target.type === "color" ? getColorInputValue(target) : target.value);
             getPath(target.dataset.listPath)[Number(target.dataset.listIndex)][target.dataset.listKey] = value;
+        } else if (target.dataset.sideLineColorPath) {
+            const station = getPath(target.dataset.sideLineColorPath);
+            station.lineColors[Number(target.dataset.sideLineColorIndex)] = getColorInputValue(target);
+            station.lineColor = station.lineColors[0];
         } else if (target.dataset.markIndex !== undefined) {
             const value = target.type === "checkbox" ? target.checked : target.value;
             state.cityMarks[Number(target.dataset.markIndex)][target.dataset.markKey] = value;
         } else if (target.dataset.routeIndex !== undefined) {
-            state.routeColors[Number(target.dataset.routeIndex)] = target.value;
+            state.routeColors[Number(target.dataset.routeIndex)] = getColorInputValue(target);
         }
         updateVisibility();
         schedulePreview();
@@ -2038,6 +2606,23 @@
             getPath(button.dataset.removeNumbering).splice(Number(button.dataset.removeIndex), 1);
             renderDynamicControls();
             schedulePreview();
+        } else if (button.dataset.addSideLineColor) {
+            const path = button.dataset.addSideLineColor;
+            if (canAddSideLineColor(path)) {
+                const station = getPath(path);
+                station.lineColors.push(LINE_TWO_GREEN);
+                station.lineColor = station.lineColors[0];
+                renderFictionalSideLineColors();
+                schedulePreview();
+            }
+        } else if (button.dataset.removeSideLineColor) {
+            const station = getPath(button.dataset.removeSideLineColor);
+            if (activeTemplate === "fictional" && station.lineColors.length > 1) {
+                station.lineColors.splice(Number(button.dataset.removeSideLineColorIndex), 1);
+                station.lineColor = station.lineColors[0];
+                renderFictionalSideLineColors();
+                schedulePreview();
+            }
         } else if (button.dataset.removeMark !== undefined) {
             state.cityMarks.splice(Number(button.dataset.removeMark), 1);
             renderMarks();
@@ -2103,6 +2688,7 @@
         else showInspector();
     });
 
+    getIccTransform().catch(error => console.error("ICC 色彩转换初始化失败。", error));
     syncBoardTypeOptions();
     updateTemplateUi();
     syncBoundFields();

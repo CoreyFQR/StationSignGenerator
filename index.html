@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="可切换独立模板、直接点击站牌内容编辑的中文站牌生成器。">
     <title>中文站牌生成器</title>
-    <link rel="stylesheet" href="styles.css?v=20260825-11">
+    <link rel="stylesheet" href="styles.css?v=20260825-13">
 </head>
 <body>
     <form id="generatorForm" novalidate>
@@ -141,8 +141,12 @@
                                 <div class="form-grid two-columns station-grid">
                                     <label class="field"><span>中文站名</span><input type="text" data-bind="leftStations.0.chinese"></label>
                                     <label class="field"><span>英文站名</span><input type="text" data-bind="leftStations.0.english"></label>
-                                    <div class="field color-field"><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="leftStations.0.lineColor"></div>
+                                    <div class="field color-field" data-jr-side-line-color><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="leftStations.0.lineColor"></div>
                                     <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="leftStations.0.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-line-colors" data-fictional-side-line-colors="leftStations.0" hidden>
+                                    <div class="subsection-heading"><h3>线路颜色</h3><button class="text-button" type="button" data-add-side-line-color="leftStations.0">添加共线线路</button></div>
+                                    <div class="repeat-list" data-side-line-color-list="leftStations.0"></div>
                                 </div>
                                 <div class="subsection station-numberings" data-numbering-section data-station-numberings="leftStations.0">
                                     <div class="subsection-heading"><h3>车站编号</h3><button class="text-button" type="button" data-add-numbering="leftStations.0.numberings">添加编号</button></div>
@@ -154,8 +158,12 @@
                                 <div class="form-grid two-columns station-grid">
                                     <label class="field"><span>中文站名</span><input type="text" data-bind="leftStations.1.chinese"></label>
                                     <label class="field"><span>英文站名</span><input type="text" data-bind="leftStations.1.english"></label>
-                                    <div class="field color-field"><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="leftStations.1.lineColor"></div>
+                                    <div class="field color-field" data-jr-side-line-color><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="leftStations.1.lineColor"></div>
                                     <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="leftStations.1.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-line-colors" data-fictional-side-line-colors="leftStations.1" hidden>
+                                    <div class="subsection-heading"><h3>线路颜色</h3><button class="text-button" type="button" data-add-side-line-color="leftStations.1">添加共线线路</button></div>
+                                    <div class="repeat-list" data-side-line-color-list="leftStations.1"></div>
                                 </div>
                                 <div class="subsection station-numberings" data-numbering-section data-station-numberings="leftStations.1">
                                     <div class="subsection-heading"><h3>车站编号</h3><button class="text-button" type="button" data-add-numbering="leftStations.1.numberings">添加编号</button></div>
@@ -174,8 +182,12 @@
                                 <div class="form-grid two-columns station-grid">
                                     <label class="field"><span>中文站名</span><input type="text" data-bind="rightStations.0.chinese"></label>
                                     <label class="field"><span>英文站名</span><input type="text" data-bind="rightStations.0.english"></label>
-                                    <div class="field color-field"><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="rightStations.0.lineColor"></div>
+                                    <div class="field color-field" data-jr-side-line-color><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="rightStations.0.lineColor"></div>
                                     <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="rightStations.0.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-line-colors" data-fictional-side-line-colors="rightStations.0" hidden>
+                                    <div class="subsection-heading"><h3>线路颜色</h3><button class="text-button" type="button" data-add-side-line-color="rightStations.0">添加共线线路</button></div>
+                                    <div class="repeat-list" data-side-line-color-list="rightStations.0"></div>
                                 </div>
                                 <div class="subsection station-numberings" data-numbering-section data-station-numberings="rightStations.0">
                                     <div class="subsection-heading"><h3>车站编号</h3><button class="text-button" type="button" data-add-numbering="rightStations.0.numberings">添加编号</button></div>
@@ -187,8 +199,12 @@
                                 <div class="form-grid two-columns station-grid">
                                     <label class="field"><span>中文站名</span><input type="text" data-bind="rightStations.1.chinese"></label>
                                     <label class="field"><span>英文站名</span><input type="text" data-bind="rightStations.1.english"></label>
-                                    <div class="field color-field"><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="rightStations.1.lineColor"></div>
+                                    <div class="field color-field" data-jr-side-line-color><span data-side-line-color-label>条带颜色</span><input type="color" data-bind="rightStations.1.lineColor"></div>
                                     <label class="toggle-field"><span>往该方向行驶</span><input type="checkbox" data-bind="rightStations.1.go"><i></i></label>
+                                </div>
+                                <div class="subsection station-line-colors" data-fictional-side-line-colors="rightStations.1" hidden>
+                                    <div class="subsection-heading"><h3>线路颜色</h3><button class="text-button" type="button" data-add-side-line-color="rightStations.1">添加共线线路</button></div>
+                                    <div class="repeat-list" data-side-line-color-list="rightStations.1"></div>
                                 </div>
                                 <div class="subsection station-numberings" data-numbering-section data-station-numberings="rightStations.1">
                                     <div class="subsection-heading"><h3>车站编号</h3><button class="text-button" type="button" data-add-numbering="rightStations.1.numberings">添加编号</button></div>
@@ -208,6 +224,6 @@
             </section>
         </main>
     </form>
-    <script src="app.js?v=20260825-14" defer></script>
+    <script src="app.js?v=20260826-28" defer></script>
 </body>
 </html>
