@@ -3,6 +3,8 @@
 
     const LINE_TWO_GREEN = "#8DBB14";
     const DIRECTION_BAND_RED = "#E2001A";
+    const SUZHOU_LINE_THREE_ORANGE = "#DD8800";
+    const SUZHOU_LINE_ELEVEN_CHAMPAGNE = "#F1C6A7";
     const FONT_CURRENT_CHINESE = "'Dream Han Sans W26', 'Microsoft YaHei', 'PingFang SC', sans-serif";
     const FONT_SIDE_CHINESE = "'Dream Han Sans W18', 'Microsoft YaHei', 'PingFang SC', sans-serif";
     const FONT_JAPANESE = "'Yu Gothic', 'Hiragino Sans', 'Meiryo', sans-serif";
@@ -11,8 +13,61 @@
     const FONT_TLC = "'Frutiger LT 65 Bold', 'Arial', sans-serif";
     const STORAGE_KEY = "jrChineseSignGeneratorVisualV2";
     const LEGACY_STORAGE_KEY = "jrChineseSignGeneratorVisualV1";
+    const FICTIONAL_STORAGE_KEY = "fictionalChineseSignGeneratorVisualV1";
+    const FICTIONAL_STATE_VERSION = 5;
     const SIDEBAR_PREFERENCE_KEY = "jrChineseSignGeneratorSidebarPinned";
     const STATE_VERSION = 3;
+    const NUMBERING_SHAPE_OPTIONS = [
+        { value: "jr-east", label: "JR东日本式" },
+        { value: "circle", label: "圆形" },
+        { value: "rounded", label: "圆角矩形" }
+    ];
+
+    function normalizeFictionalNumberingStyle(numbering, fallbackTextColor) {
+        const value = { ...(numbering || {}) };
+        if (!NUMBERING_SHAPE_OPTIONS.some(option => option.value === value.shape)) value.shape = "jr-east";
+        value.solid = value.solid === true;
+        value.textColor = normalizeHex(value.textColor) || normalizeHex(fallbackTextColor) || "#1A1A1A";
+        return value;
+    }
+
+    function normalizeFictionalNumberingLists(value) {
+        [value.current, ...value.leftStations, ...value.rightStations].forEach(station => {
+            const numberings = Array.isArray(station.numberings) ? station.numberings : [];
+            station.numberings = numberings
+                .slice(0, 8)
+                .map(numbering => normalizeFictionalNumberingStyle(numbering, value.black));
+        });
+        return value;
+    }
+
+    const BOARD_OPTIONS = [
+        { value: "SE-6", label: "SE-6 型（1900×600）" },
+        { value: "SE-7", label: "SE-7 型（2480×600）" },
+        { value: "SE-8", label: "SE-8 型（3700×600）" },
+        { value: "RATIO-3-1", label: "3：1（1800×600）" },
+        { value: "RATIO-4-1", label: "4：1（2400×600）" },
+        { value: "RATIO-5-1", label: "5：1（3000×600）" },
+        { value: "RATIO-6-1", label: "6：1（3600×600）" }
+    ];
+    const TEMPLATES = {
+        "jr-east": {
+            name: "JR 东日本",
+            storageKey: STORAGE_KEY,
+            boardTypes: BOARD_OPTIONS.map(option => option.value),
+            defaultBoardType: "SE-6",
+            supportsTlc: true,
+            downloadName: "JR风格中文站牌"
+        },
+        fictional: {
+            name: "架空",
+            storageKey: FICTIONAL_STORAGE_KEY,
+            boardTypes: ["RATIO-3-1", "RATIO-4-1", "RATIO-5-1", "RATIO-6-1"],
+            defaultBoardType: "RATIO-3-1",
+            supportsTlc: false,
+            downloadName: "架空风格中文站牌"
+        }
+    };
 
     const FRAMES = {
         "SE-6": { width: 1830, height: 490, padding: { top: 80, right: 35, bottom: 30, left: 35 } },
@@ -23,53 +78,102 @@
         "RATIO-5-1": { width: 2930, height: 490, padding: { top: 80, right: 35, bottom: 30, left: 35 } },
         "RATIO-6-1": { width: 3530, height: 490, padding: { top: 80, right: 35, bottom: 30, left: 35 } }
     };
+    const FICTIONAL_FRAMES = {
+        "RATIO-3-1": { width: 1740, height: 540, padding: { top: 30, right: 30, bottom: 30, left: 30 } },
+        "RATIO-4-1": { width: 2340, height: 540, padding: { top: 30, right: 30, bottom: 30, left: 30 } },
+        "RATIO-5-1": { width: 2940, height: 540, padding: { top: 30, right: 30, bottom: 30, left: 30 } },
+        "RATIO-6-1": { width: 3540, height: 540, padding: { top: 30, right: 30, bottom: 30, left: 30 } }
+    };
 
-    const defaultState = () => ({
-        stateVersion: STATE_VERSION,
-        board: { type: "SE-6", light: true },
-        showNumbering: true,
-        showLanguages: true,
-        showCityMarks: true,
-        branchLeft: false,
-        branchRight: false,
-        spurLeft: false,
-        spurRight: false,
-        black: "#1A1A1A",
-        current: {
-            chinese: "人民广场",
-            zhuyin: "ㄖㄣˊ ㄇㄧㄣˊ ㄍㄨㄤˇ ㄔㄤˇ",
-            english: "People's Square",
-            japanese: "人民広場",
-            korean: "런민광창",
-            showTlc: true,
-            tlc: "RMG",
-            numberings: [{ route: "2", number: "12", color: LINE_TWO_GREEN }]
-        },
-        leftStations: [
-            {
-                chinese: "南京西路",
-                english: "Nanjing Rd.(W)",
-                lineColor: DIRECTION_BAND_RED,
-                go: false,
-                numberings: [{ route: "2", number: "11", color: LINE_TWO_GREEN }]
+    const defaultState = (templateId = "jr-east") => {
+        const value = {
+            stateVersion: STATE_VERSION,
+            board: { type: "SE-6", light: true },
+            showNumbering: true,
+            showLanguages: true,
+            showCityMarks: true,
+            branchLeft: false,
+            branchRight: false,
+            spurLeft: false,
+            spurRight: false,
+            black: "#1A1A1A",
+            current: {
+                chinese: "人民广场",
+                zhuyin: "ㄖㄣˊ ㄇㄧㄣˊ ㄍㄨㄤˇ ㄔㄤˇ",
+                english: "People's Square",
+                japanese: "人民広場",
+                korean: "런민광창",
+                showTlc: true,
+                tlc: "RMG",
+                numberings: [{ route: "2", number: "12", color: LINE_TWO_GREEN }]
             },
-            { chinese: "", english: "", lineColor: DIRECTION_BAND_RED, go: false, numberings: [] }
-        ],
-        rightStations: [
-            {
-                chinese: "南京东路",
-                english: "Nanjing Rd.(E)",
-                lineColor: DIRECTION_BAND_RED,
-                go: true,
-                numberings: [{ route: "2", number: "13", color: LINE_TWO_GREEN }]
-            },
-            { chinese: "", english: "", lineColor: DIRECTION_BAND_RED, go: false, numberings: [] }
-        ],
-        cityMarks: [
-            { text: "沪", fill: true }
-        ],
-        routeColors: [LINE_TWO_GREEN]
-    });
+            leftStations: [
+                {
+                    chinese: "南京西路",
+                    english: "Nanjing Rd.(W)",
+                    lineColor: DIRECTION_BAND_RED,
+                    go: false,
+                    numberings: [{ route: "2", number: "11", color: LINE_TWO_GREEN }]
+                },
+                { chinese: "", english: "", lineColor: DIRECTION_BAND_RED, go: false, numberings: [] }
+            ],
+            rightStations: [
+                {
+                    chinese: "南京东路",
+                    english: "Nanjing Rd.(E)",
+                    lineColor: DIRECTION_BAND_RED,
+                    go: true,
+                    numberings: [{ route: "2", number: "13", color: LINE_TWO_GREEN }]
+                },
+                { chinese: "", english: "", lineColor: DIRECTION_BAND_RED, go: false, numberings: [] }
+            ],
+            cityMarks: [
+                { text: "沪", fill: true }
+            ],
+            routeColors: [LINE_TWO_GREEN]
+        };
+        if (templateId === "fictional") {
+            value.templateVersion = FICTIONAL_STATE_VERSION;
+            value.board.type = TEMPLATES.fictional.defaultBoardType;
+            value.current = {
+                chinese: "唯亭",
+                zhuyin: "ㄨㄟˊ ㄊㄧㄥˊ",
+                english: "Weiting",
+                japanese: "唯亭",
+                korean: "웨이팅",
+                showTlc: false,
+                tlc: "",
+                numberings: [
+                    { route: "3", number: "37", color: SUZHOU_LINE_THREE_ORANGE },
+                    { route: "11", number: "01", color: SUZHOU_LINE_ELEVEN_CHAMPAGNE }
+                ]
+            };
+            value.leftStations = [
+                {
+                    chinese: "戈巷街",
+                    english: "Gexiangjie",
+                    lineColor: SUZHOU_LINE_THREE_ORANGE,
+                    go: false,
+                    numberings: [{ route: "3", number: "36", color: SUZHOU_LINE_THREE_ORANGE }]
+                },
+                { chinese: "", english: "", lineColor: SUZHOU_LINE_THREE_ORANGE, go: false, numberings: [] }
+            ];
+            value.rightStations = [
+                {
+                    chinese: "草鞋山",
+                    english: "Caoxieshan",
+                    lineColor: SUZHOU_LINE_ELEVEN_CHAMPAGNE,
+                    go: true,
+                    numberings: [{ route: "11", number: "02", color: SUZHOU_LINE_ELEVEN_CHAMPAGNE }]
+                },
+                { chinese: "", english: "", lineColor: SUZHOU_LINE_ELEVEN_CHAMPAGNE, go: false, numberings: [] }
+            ];
+            value.cityMarks = [{ text: "苏", fill: true }];
+            value.routeColors = ["#FFFFFF"];
+            normalizeFictionalNumberingLists(value);
+        }
+        return value;
+    };
 
     const form = document.getElementById("generatorForm");
     const canvas = document.getElementById("signCanvas");
@@ -81,15 +185,46 @@
     const inspectorTitle = document.getElementById("inspectorTitle");
     const showInspectorButton = document.getElementById("showInspectorButton");
     const pinInspectorButton = document.getElementById("pinInspectorButton");
+    const boardTypeSelect = document.getElementById("boardTypeSelect");
+    const templateDrawer = document.getElementById("templateDrawer");
+    const templateDrawerButton = document.getElementById("templateDrawerButton");
     const compactInspectorMedia = window.matchMedia("(max-width: 900px)");
-    let state = loadInitialState();
+    let activeTemplate = "jr-east";
+    const templateStates = {
+        "jr-east": loadInitialState(STORAGE_KEY, LEGACY_STORAGE_KEY, "jr-east"),
+        fictional: loadInitialState(FICTIONAL_STORAGE_KEY, null, "fictional")
+    };
+    let state = templateStates[activeTemplate];
     let renderTimer = 0;
     let activeInspector = "current";
     let inspectorPinned = localStorage.getItem(SIDEBAR_PREFERENCE_KEY) !== "false";
+    let numberingDrag = null;
 
-    function mergeState(value) {
-        const fallback = defaultState();
+    function normalizeTemplateState(templateId, value) {
+        const template = TEMPLATES[templateId] || TEMPLATES["jr-east"];
+        if (!template.boardTypes.includes(value.board.type)) value.board.type = template.defaultBoardType;
+        if (!template.supportsTlc) {
+            value.templateVersion = FICTIONAL_STATE_VERSION;
+            value.current.showTlc = false;
+            normalizeFictionalNumberingLists(value);
+            value.routeColors = [value.routeColors[0] || "#FFFFFF"];
+        }
+        return value;
+    }
+
+    function mergeState(value, templateId = "jr-east") {
+        const fallback = defaultState(templateId);
         if (!value || typeof value !== "object") return fallback;
+        const storedFictionalVersion = Number(value.templateVersion) || 0;
+        const migrateFictionalColors = templateId === "fictional"
+            && storedFictionalVersion < 2;
+        const migrateCopiedFictionalDefaults = templateId === "fictional"
+            && storedFictionalVersion < FICTIONAL_STATE_VERSION
+            && value.current?.chinese === "人民广场";
+        const migrateWeitingZhuyin = templateId === "fictional"
+            && storedFictionalVersion < FICTIONAL_STATE_VERSION
+            && value.current?.chinese === "唯亭"
+            && value.current?.zhuyin === "Wéitíng";
         const legacyVisibility = typeof value.showMultilingual === "boolean" ? value.showMultilingual : true;
         const cityMarks = Array.isArray(value.cityMarks)
             ? value.cityMarks.map(mark => ({ ...mark }))
@@ -100,7 +235,7 @@
             && cityMarks[0].fill === false) {
             cityMarks[0].fill = true;
         }
-        return {
+        const merged = {
             ...fallback,
             ...value,
             stateVersion: STATE_VERSION,
@@ -126,26 +261,124 @@
                 numberings: Array.isArray(value.rightStations?.[index]?.numberings) ? value.rightStations[index].numberings : station.numberings
             })),
             cityMarks,
-            routeColors: Array.isArray(value.routeColors) && value.routeColors.length ? value.routeColors : fallback.routeColors
+            routeColors: migrateFictionalColors
+                ? fallback.routeColors
+                : (Array.isArray(value.routeColors) && value.routeColors.length ? value.routeColors : fallback.routeColors)
         };
+        if (migrateCopiedFictionalDefaults) {
+            merged.current = fallback.current;
+            merged.leftStations = fallback.leftStations;
+            merged.rightStations = fallback.rightStations;
+            merged.cityMarks = fallback.cityMarks;
+        } else if (migrateWeitingZhuyin) {
+            merged.current.zhuyin = fallback.current.zhuyin;
+        }
+        return normalizeTemplateState(templateId, merged);
     }
 
-    function loadInitialState() {
+    function loadInitialState(storageKey, legacyStorageKey, templateId) {
         try {
-            const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
-            return stored ? mergeState(JSON.parse(stored)) : defaultState();
+            const stored = localStorage.getItem(storageKey) || (legacyStorageKey ? localStorage.getItem(legacyStorageKey) : null);
+            return stored ? mergeState(JSON.parse(stored), templateId) : defaultState(templateId);
         } catch (error) {
             console.warn("无法恢复保存的数据，已使用默认设置。", error);
-            return defaultState();
+            return defaultState(templateId);
         }
     }
 
     function saveState() {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            localStorage.setItem(TEMPLATES[activeTemplate].storageKey, JSON.stringify(state));
         } catch (error) {
             console.warn("无法保存当前设置。", error);
         }
+    }
+
+    function setTemplateDrawerOpen(open) {
+        const wasOpen = document.body.classList.contains("template-drawer-open");
+        document.body.classList.toggle("template-drawer-open", open);
+        templateDrawerButton.setAttribute("aria-expanded", String(open));
+        templateDrawer.setAttribute("aria-hidden", String(!open));
+        templateDrawer.inert = !open;
+        if (open) {
+            window.requestAnimationFrame(() => document.getElementById("templateDrawerCloseButton").focus());
+        } else if (wasOpen) {
+            templateDrawerButton.focus();
+        }
+    }
+
+    function syncBoardTypeOptions() {
+        const supportedTypes = TEMPLATES[activeTemplate].boardTypes;
+        boardTypeSelect.replaceChildren(...BOARD_OPTIONS
+            .filter(option => supportedTypes.includes(option.value))
+            .map(item => {
+                const option = document.createElement("option");
+                option.value = item.value;
+                option.textContent = item.label;
+                return option;
+            }));
+    }
+
+    function updateTemplateUi() {
+        const template = TEMPLATES[activeTemplate];
+        const fictional = activeTemplate === "fictional";
+        if (fictional && activeInspector === "route") activeInspector = "current";
+        document.documentElement.dataset.template = activeTemplate;
+        document.getElementById("currentTemplateLabel").textContent = template.name;
+        document.getElementById("canvasTemplateName").textContent = `${template.name}模板`;
+        document.querySelectorAll("[data-template-id]").forEach(option => {
+            const selected = option.dataset.templateId === activeTemplate;
+            option.classList.toggle("active", selected);
+            option.setAttribute("aria-pressed", String(selected));
+        });
+        document.querySelectorAll('[data-template-feature="tlc"]').forEach(section => {
+            section.hidden = !template.supportsTlc;
+            section.querySelectorAll("input, button, select").forEach(control => {
+                control.disabled = !template.supportsTlc;
+            });
+        });
+        document.querySelectorAll("[data-route-color-label]").forEach(label => {
+            label.textContent = "线路颜色";
+        });
+        document.querySelectorAll("[data-side-line-color-label]").forEach(label => {
+            label.textContent = fictional ? "线路颜色" : "条带颜色";
+        });
+        const addRouteColorButton = document.getElementById("addRouteColorButton");
+        addRouteColorButton.hidden = fictional;
+        addRouteColorButton.disabled = fictional;
+        document.querySelectorAll("[data-fictional-station-color]").forEach(field => {
+            field.hidden = !fictional;
+            field.querySelectorAll("input, button, select").forEach(control => {
+                control.disabled = !fictional;
+            });
+        });
+        const routeHotspot = document.querySelector('[data-inspector="route"]');
+        routeHotspot.hidden = fictional;
+        routeHotspot.disabled = fictional;
+        document.querySelectorAll("[data-inspector-panel]").forEach(panel => {
+            panel.hidden = panel.dataset.inspectorPanel !== activeInspector
+                || (fictional && panel.dataset.inspectorPanel === "route");
+        });
+        document.querySelectorAll(".canvas-hotspot").forEach(button => {
+            button.classList.toggle("active", button.dataset.inspector === activeInspector);
+        });
+        inspectorTitle.textContent = getInspectorTitle(activeInspector);
+    }
+
+    function switchTemplate(templateId) {
+        if (!TEMPLATES[templateId]) return;
+        if (templateId === activeTemplate) {
+            setTemplateDrawerOpen(false);
+            return;
+        }
+        saveState();
+        activeTemplate = templateId;
+        state = normalizeTemplateState(templateId, templateStates[templateId]);
+        syncBoardTypeOptions();
+        updateTemplateUi();
+        syncBoundFields();
+        updatePreview();
+        setTemplateDrawerOpen(false);
     }
 
     function pathParts(path) {
@@ -355,6 +588,12 @@
             colorInput.dataset.colorEnhanced = "true";
             const editor = document.createElement("div");
             editor.className = "color-editor";
+            if (colorInput.classList.contains("numbering-marker-color-input")) {
+                editor.classList.add("numbering-marker-color-editor");
+            }
+            if (colorInput.classList.contains("numbering-text-color-input")) {
+                editor.classList.add("numbering-text-color-editor");
+            }
             colorInput.parentNode.insertBefore(editor, colorInput);
 
             const trigger = document.createElement("button");
@@ -366,7 +605,14 @@
             swatch.className = "color-swatch";
             const summary = document.createElement("span");
             summary.className = "color-trigger-value";
-            trigger.append(swatch, summary);
+            if (editor.classList.contains("numbering-text-color-editor")) {
+                const prefix = document.createElement("span");
+                prefix.className = "color-trigger-prefix";
+                prefix.textContent = "字色";
+                trigger.append(prefix, swatch, summary);
+            } else {
+                trigger.append(swatch, summary);
+            }
 
             const popover = document.createElement("div");
             popover.className = "color-popover";
@@ -552,14 +798,40 @@
         return button;
     }
 
+    function getNumberingLimit(path) {
+        return activeTemplate === "fictional" && path.endsWith(".numberings") ? 8 : 2;
+    }
+
+    function getNewNumberingColor(list) {
+        if (activeTemplate === "fictional") return list[0]?.color || LINE_TWO_GREEN;
+        return state.routeColors[0] || LINE_TWO_GREEN;
+    }
+
+    function createNewNumbering(list) {
+        const numbering = { route: "", number: "", color: getNewNumberingColor(list) };
+        return activeTemplate === "fictional"
+            ? normalizeFictionalNumberingStyle(numbering, state.black)
+            : numbering;
+    }
+
+    function updateNumberingAddButtons() {
+        document.querySelectorAll("[data-add-numbering]").forEach(button => {
+            const path = button.dataset.addNumbering;
+            button.disabled = getPath(path).length >= getNumberingLimit(path);
+        });
+    }
+
     function renderNumberingLists() {
         document.querySelectorAll("[data-numbering-list]").forEach(container => {
             const path = container.dataset.numberingList;
             const numberings = getPath(path);
             container.replaceChildren();
             numberings.forEach((numbering, index) => {
+                const fictional = activeTemplate === "fictional";
                 const row = document.createElement("div");
-                row.className = "repeat-row";
+                row.className = fictional ? "repeat-row fictional-numbering-row" : "repeat-row";
+                row.dataset.numberingPath = path;
+                row.dataset.numberingIndex = index;
 
                 const label = document.createElement("span");
                 label.className = "row-label";
@@ -590,6 +862,7 @@
 
                 const colorInput = document.createElement("input");
                 colorInput.type = "color";
+                colorInput.className = fictional ? "numbering-marker-color-input" : "";
                 colorInput.value = numbering.color;
                 colorInput.setAttribute("aria-label", `编号颜色 ${index + 1}`);
                 colorInput.dataset.listPath = path;
@@ -601,11 +874,67 @@
                 const remove = createButton("×", "icon-button", { removeNumbering: path, removeIndex: index });
                 remove.setAttribute("aria-label", `删除编号 ${index + 1}`);
                 remove.disabled = path === "current.numberings" && state.current.showTlc && numberings.length <= 1;
-                row.append(label, routeInput, numberInput, colorInput, spacer, remove);
+                if (fictional) {
+                    const dragHandle = createButton("↕", "numbering-drag-handle", { dragNumbering: "true" });
+                    dragHandle.draggable = true;
+                    dragHandle.setAttribute("aria-label", `拖动编号 ${index + 1} 调整顺序`);
+                    dragHandle.title = "拖动或使用上下方向键调整顺序";
+
+                    const shapeSelect = document.createElement("select");
+                    shapeSelect.className = "numbering-shape-select";
+                    shapeSelect.setAttribute("aria-label", `编号形状 ${index + 1}`);
+                    NUMBERING_SHAPE_OPTIONS.forEach(option => {
+                        const item = document.createElement("option");
+                        item.value = option.value;
+                        item.textContent = option.label;
+                        shapeSelect.append(item);
+                    });
+                    shapeSelect.value = numbering.shape;
+                    shapeSelect.dataset.listPath = path;
+                    shapeSelect.dataset.listIndex = index;
+                    shapeSelect.dataset.listKey = "shape";
+
+                    const solidLabel = document.createElement("label");
+                    solidLabel.className = "numbering-solid-toggle";
+                    const solidInput = document.createElement("input");
+                    solidInput.type = "checkbox";
+                    solidInput.checked = numbering.solid;
+                    solidInput.setAttribute("aria-label", `编号实心 ${index + 1}`);
+                    solidInput.dataset.listPath = path;
+                    solidInput.dataset.listIndex = index;
+                    solidInput.dataset.listKey = "solid";
+                    const solidText = document.createElement("span");
+                    solidText.textContent = "实心";
+                    solidLabel.append(solidInput, solidText);
+
+                    const textColorInput = document.createElement("input");
+                    textColorInput.type = "color";
+                    textColorInput.className = "numbering-text-color-input";
+                    textColorInput.value = numbering.textColor;
+                    textColorInput.setAttribute("aria-label", `编号文字颜色 ${index + 1}`);
+                    textColorInput.dataset.listPath = path;
+                    textColorInput.dataset.listIndex = index;
+                    textColorInput.dataset.listKey = "textColor";
+
+                    row.append(
+                        dragHandle,
+                        label,
+                        routeInput,
+                        numberInput,
+                        colorInput,
+                        remove,
+                        shapeSelect,
+                        solidLabel,
+                        textColorInput
+                    );
+                } else {
+                    row.append(label, routeInput, numberInput, colorInput, spacer, remove);
+                }
                 container.append(row);
             });
             enhanceColorInputs(container);
         });
+        updateNumberingAddButtons();
     }
 
     function renderMarks() {
@@ -655,7 +984,9 @@
 
     function renderRouteColors() {
         const container = document.getElementById("routeColorList");
+        const fictional = activeTemplate === "fictional";
         container.replaceChildren();
+        if (fictional) return;
         state.routeColors.forEach((color, index) => {
             const row = document.createElement("div");
             row.className = "repeat-row";
@@ -667,12 +998,13 @@
             input.value = color;
             input.setAttribute("aria-label", `中央线路色 ${index + 1}`);
             input.dataset.routeIndex = index;
+            row.append(label, input);
             const spacer = document.createElement("span");
             spacer.className = "row-spacer";
             const remove = createButton("×", "icon-button", { removeRoute: index });
             remove.disabled = state.routeColors.length <= 1;
             remove.setAttribute("aria-label", `删除线路色 ${index + 1}`);
-            row.append(label, input, spacer, remove);
+            row.append(spacer, remove);
             container.append(row);
         });
         enhanceColorInputs(container);
@@ -751,16 +1083,31 @@
         }
     }
 
+    function getSideNumberingGrid(station, compact) {
+        const twoRows = activeTemplate === "fictional" && station.numberings.length > 3;
+        const baseSize = compact ? 50 : 80;
+        const markerSize = twoRows ? baseSize * .62 : baseSize;
+        const markerGap = markerSize * .08;
+        const rowCounts = twoRows
+            ? [Math.ceil(station.numberings.length / 2), Math.floor(station.numberings.length / 2)]
+            : [station.numberings.length];
+        const columnCount = Math.max(...rowCounts);
+        return {
+            twoRows,
+            markerSize,
+            markerGap,
+            rowCounts,
+            blockWidth: columnCount * markerSize + Math.max(0, columnCount - 1) * markerGap
+        };
+    }
+
     function getSideStationShift(data, station, branch) {
         if (!data.showNumbering || !station.go || station.numberings.length < 2) return 0;
         const baseInset = branch ? 130 : 200;
-        const markerSize = branch ? 50 : 80;
-        const markerGap = markerSize * .08;
         const textGap = branch ? 10 : 18;
         const edgeGap = branch ? 12 : 20;
-        const markerBlockWidth = station.numberings.length * markerSize
-            + (station.numberings.length - 1) * markerGap;
-        return Math.max(0, Math.ceil(edgeGap + markerBlockWidth + textGap - baseInset));
+        const grid = getSideNumberingGrid(station, branch);
+        return Math.max(0, Math.ceil(edgeGap + grid.blockWidth + textGap - baseInset));
     }
 
     function getSharedBranchShift(data, stations, branch) {
@@ -774,6 +1121,7 @@
     }
 
     function createBandPath(ctx, data, width, lineTop, lineBottom, lineY, branchStart) {
+        const fictionalArrow = activeTemplate === "fictional";
         const sharedRightShift = getSharedBranchShift(data, data.rightStations, data.branchRight);
         const sharedLeftShift = getSharedBranchShift(data, data.leftStations, data.branchLeft);
         const rightTopShift = data.branchRight ? sharedRightShift : getSideStationShift(data, data.rightStations[0], false);
@@ -786,7 +1134,10 @@
             ctx.lineTo(width - branchStart + 65, lineTop - 65);
             if (data.rightStations[0].go) {
                 ctx.lineTo(width - 130 - rightTopShift, lineTop - 65);
-                ctx.lineTo(width - 50 - rightTopShift, lineTop - 25);
+                ctx.lineTo(
+                    fictionalArrow ? width - 53 - rightTopShift : width - 50 - rightTopShift,
+                    fictionalArrow ? lineTop + 12 : lineTop - 25
+                );
                 ctx.lineTo(width - 130 - rightTopShift, lineTop + 12);
             } else {
                 ctx.lineTo(width, lineTop - 65);
@@ -797,7 +1148,10 @@
             ctx.lineTo(width - branchStart + 100, lineBottom - 12);
             if (data.rightStations[1].go) {
                 ctx.lineTo(width - 130 - rightBottomShift, lineBottom - 12);
-                ctx.lineTo(width - 50 - rightBottomShift, lineBottom + 25);
+                ctx.lineTo(
+                    fictionalArrow ? width - 53 - rightBottomShift : width - 50 - rightBottomShift,
+                    fictionalArrow ? lineBottom + 65 : lineBottom + 25
+                );
                 ctx.lineTo(width - 130 - rightBottomShift, lineBottom + 65);
             } else {
                 ctx.lineTo(width, lineBottom - 12);
@@ -807,7 +1161,10 @@
             ctx.lineTo(width - branchStart, lineBottom);
         } else if (data.rightStations[0].go) {
             ctx.moveTo(width - 160 - rightTopShift, lineTop);
-            ctx.lineTo(width - 65 - rightTopShift, lineY);
+            ctx.lineTo(
+                fictionalArrow ? width - 60 - rightTopShift : width - 65 - rightTopShift,
+                fictionalArrow ? lineBottom : lineY
+            );
             ctx.lineTo(width - 160 - rightTopShift, lineBottom);
         } else {
             ctx.moveTo(width, lineTop);
@@ -819,7 +1176,10 @@
             ctx.lineTo(branchStart - 65, lineBottom + 65);
             if (data.leftStations[1].go) {
                 ctx.lineTo(130 + leftBottomShift, lineBottom + 65);
-                ctx.lineTo(50 + leftBottomShift, lineBottom + 25);
+                ctx.lineTo(
+                    fictionalArrow ? 53 + leftBottomShift : 50 + leftBottomShift,
+                    fictionalArrow ? lineBottom + 65 : lineBottom + 25
+                );
                 ctx.lineTo(130 + leftBottomShift, lineBottom - 12);
             } else {
                 ctx.lineTo(0, lineBottom + 65);
@@ -830,7 +1190,10 @@
             ctx.lineTo(branchStart - 100, lineTop + 12);
             if (data.leftStations[0].go) {
                 ctx.lineTo(130 + leftTopShift, lineTop + 12);
-                ctx.lineTo(50 + leftTopShift, lineTop - 25);
+                ctx.lineTo(
+                    fictionalArrow ? 53 + leftTopShift : 50 + leftTopShift,
+                    fictionalArrow ? lineTop + 12 : lineTop - 25
+                );
                 ctx.lineTo(130 + leftTopShift, lineTop - 65);
             } else {
                 ctx.lineTo(0, lineTop + 12);
@@ -840,7 +1203,10 @@
             ctx.lineTo(branchStart, lineTop);
         } else if (data.leftStations[0].go) {
             ctx.lineTo(160 + leftTopShift, lineBottom);
-            ctx.lineTo(65 + leftTopShift, lineY);
+            ctx.lineTo(
+                fictionalArrow ? 60 + leftTopShift : 65 + leftTopShift,
+                fictionalArrow ? lineBottom : lineY
+            );
             ctx.lineTo(160 + leftTopShift, lineTop);
         } else {
             ctx.lineTo(0, lineBottom);
@@ -855,6 +1221,7 @@
         const shift = getSideStationShift(data, station, true);
         const top = lineTop - 170;
         const bottom = lineTop - 95;
+        const fictionalArrow = activeTemplate === "fictional";
         const center = (top + bottom) / 2;
         ctx.beginPath();
         if (isRight) {
@@ -862,7 +1229,10 @@
             ctx.lineTo(width - branchStart + 168, top);
             if (station.go) {
                 ctx.lineTo(width - 160 - shift, top);
-                ctx.lineTo(width - 65 - shift, center);
+                ctx.lineTo(
+                    fictionalArrow ? width - 85 - shift : width - 65 - shift,
+                    fictionalArrow ? bottom : center
+                );
                 ctx.lineTo(width - 160 - shift, bottom);
             } else {
                 ctx.lineTo(width, top);
@@ -875,7 +1245,10 @@
             ctx.lineTo(branchStart - 168, top);
             if (station.go) {
                 ctx.lineTo(160 + shift, top);
-                ctx.lineTo(65 + shift, center);
+                ctx.lineTo(
+                    fictionalArrow ? 85 + shift : 65 + shift,
+                    fictionalArrow ? bottom : center
+                );
                 ctx.lineTo(160 + shift, bottom);
             } else {
                 ctx.lineTo(0, top);
@@ -1012,19 +1385,44 @@
     function paintNumbering(ctx, x, y, size, numbering, rounded = true) {
         const route = String(numbering.route || "");
         const number = String(numbering.number || "");
+        const fictional = activeTemplate === "fictional";
+        const shape = fictional ? numbering.shape : "jr-east";
+        const solid = fictional && numbering.solid;
         ctx.save();
         ctx.fillStyle = numbering.color;
-        if (rounded) {
+        if (shape === "circle") {
+            ctx.beginPath();
+            ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (rounded) {
             roundRectPath(ctx, x, y, size, size, size * .10);
             ctx.fill();
         } else {
             ctx.fillRect(x, y, size, size);
         }
-        const inset = size * .10;
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.fillRect(x + inset, y + inset, size - inset * 2, size - inset * 2);
-        ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = state.black;
+        if (!solid) {
+            const inset = size * .10;
+            ctx.globalCompositeOperation = "destination-out";
+            if (shape === "circle") {
+                ctx.beginPath();
+                ctx.arc(x + size / 2, y + size / 2, size / 2 - inset, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (shape === "rounded") {
+                roundRectPath(
+                    ctx,
+                    x + inset,
+                    y + inset,
+                    size - inset * 2,
+                    size - inset * 2,
+                    size * .08
+                );
+                ctx.fill();
+            } else {
+                ctx.fillRect(x + inset, y + inset, size - inset * 2, size - inset * 2);
+            }
+            ctx.globalCompositeOperation = "source-over";
+        }
+        ctx.fillStyle = fictional ? numbering.textColor : state.black;
         ctx.textAlign = "center";
         ctx.textBaseline = "alphabetic";
         let routeSize = size * .34;
@@ -1047,8 +1445,46 @@
         ctx.drawImage(marker, x, y, size, size);
     }
 
+    function drawFictionalCurrentNumberings(ctx, data, chinese, zhuyin, geometry) {
+        const numberings = data.current.numberings;
+        const twoRows = numberings.length > 3;
+        const markerGap = twoRows ? 10 : 12;
+        const markerSize = twoRows
+            ? Math.max(1, (zhuyin.bottom - chinese.top - markerGap) / 2)
+            : 150;
+        const rowCounts = twoRows
+            ? [Math.ceil(numberings.length / 2), Math.floor(numberings.length / 2)]
+            : [numberings.length];
+        const columnCount = Math.max(...rowCounts);
+        const blockWidth = columnCount * markerSize + Math.max(0, columnCount - 1) * markerGap;
+        const rightEdge = geometry.half - chinese.width / 2 - 80;
+        const blockX = Math.max(25, rightEdge - blockWidth);
+        const blockY = twoRows ? chinese.top : geometry.lineTop - 250;
+        let numberingIndex = 0;
+
+        rowCounts.forEach((rowCount, rowIndex) => {
+            const rowWidth = rowCount * markerSize + Math.max(0, rowCount - 1) * markerGap;
+            const rowX = blockX + (blockWidth - rowWidth) / 2;
+            for (let columnIndex = 0; columnIndex < rowCount; columnIndex += 1) {
+                drawNumbering(
+                    ctx,
+                    rowX + columnIndex * (markerSize + markerGap),
+                    blockY + rowIndex * (markerSize + markerGap),
+                    markerSize,
+                    numberings[numberingIndex],
+                    true
+                );
+                numberingIndex += 1;
+            }
+        });
+    }
+
     function drawTlcAndNumberings(ctx, data, chinese, zhuyin, geometry) {
         if (!data.showNumbering || !data.current.numberings.length) return;
+        if (activeTemplate === "fictional") {
+            drawFictionalCurrentNumberings(ctx, data, chinese, zhuyin, geometry);
+            return;
+        }
         const count = data.current.numberings.length;
         const tlcX = Math.max(25, geometry.half - chinese.width / 2 - 80 - 183.6 * count);
         const markerScale = data.current.showTlc && getSideLayout(data, "left") !== "single" && tlcX < geometry.branchStart - 50 ? 1.2 : 1.5;
@@ -1122,7 +1558,9 @@
                     : geometry.half - currentEnglish.width / 2;
                 maxWidth = Math.max(140, isRight ? x - centerEdge - 40 : centerEdge - x - 40);
             }
-            const chineseSize = compactStation ? 60 : (station.go ? 80 : 70);
+            const chineseSize = compactStation
+                ? 60
+                : (activeTemplate === "fictional" || station.go ? 80 : 70);
             const englishStartSize = doubleBranch ? 40 : (spurStation ? 42 : 55);
             const englishY = doubleBranch ? y + 80 : (spurStation ? geometry.lineTop - 45 : geometry.lineBottom + 70);
             if (mode === "names") {
@@ -1156,25 +1594,31 @@
                 fitMode: "condense"
             });
             if (data.showNumbering && station.go && station.numberings.length) {
-                const nSize = compactStation ? 50 : 80;
-                const numberingY = doubleBranch ? y + 36 : (spurStation ? geometry.lineTop - 90 : geometry.lineBottom + 15);
-                const numberingGap = nSize * .08;
+                const grid = getSideNumberingGrid(station, compactStation);
+                const numberingClearance = activeTemplate === "fictional" && compactStation ? 7 : 0;
+                const numberingY = (doubleBranch
+                    ? y + 36
+                    : (spurStation ? geometry.lineTop - 90 : geometry.lineBottom + 15)) + numberingClearance;
                 const numberingTextGap = compactStation ? 10 : 18;
-                const numberingBlockWidth = station.numberings.length * nSize
-                    + Math.max(0, station.numberings.length - 1) * numberingGap;
                 const singleMarkerBase = compactStation ? 120 : 180;
-                const numberingX = station.numberings.length < 2
-                    ? (isRight ? width - singleMarkerBase : singleMarkerBase - nSize * 1.08)
-                    : (isRight ? x + numberingTextGap : x - numberingTextGap - numberingBlockWidth);
-                station.numberings.forEach((numbering, numberIndex) => {
-                    drawNumbering(
-                        ctx,
-                        numberingX + numberIndex * (nSize + numberingGap),
-                        numberingY,
-                        nSize,
-                        numbering,
-                        true
-                    );
+                const blockX = station.numberings.length < 2
+                    ? (isRight ? width - singleMarkerBase : singleMarkerBase - grid.markerSize * 1.08)
+                    : (isRight ? x + numberingTextGap : x - numberingTextGap - grid.blockWidth);
+                let numberingIndex = 0;
+                grid.rowCounts.forEach((rowCount, rowIndex) => {
+                    const rowWidth = rowCount * grid.markerSize + Math.max(0, rowCount - 1) * grid.markerGap;
+                    const rowX = blockX + (grid.blockWidth - rowWidth) / 2;
+                    for (let columnIndex = 0; columnIndex < rowCount; columnIndex += 1) {
+                        drawNumbering(
+                            ctx,
+                            rowX + columnIndex * (grid.markerSize + grid.markerGap),
+                            numberingY + rowIndex * (grid.markerSize + grid.markerGap),
+                            grid.markerSize,
+                            station.numberings[numberingIndex],
+                            true
+                        );
+                        numberingIndex += 1;
+                    }
                 });
             }
         }
@@ -1183,25 +1627,38 @@
     function drawCityMarks(ctx, data, width, stationNameTop) {
         if (!data.showCityMarks) return;
         const marks = data.cityMarks.slice(0, 4);
+        if (!marks.length) return;
+        const size = 80;
+        const outlineWidth = 4;
+        const firstX = width - 160 - (marks.length - 1) * 100;
+        const layerX = firstX - outlineWidth / 2;
+        const layerY = stationNameTop;
+        const markerLayer = document.createElement("canvas");
+        markerLayer.width = Math.ceil((marks.length - 1) * 100 + size + outlineWidth);
+        markerLayer.height = size + outlineWidth;
+        const markerCtx = markerLayer.getContext("2d");
         marks.forEach((mark, index) => {
-            const size = 80;
-            const outlineWidth = 4;
-            const x = width - 160 - (marks.length - 1 - index) * 100;
-            // Align the visible top edge of the marker with the station-name glyphs.
-            const y = stationNameTop + outlineWidth / 2;
-            ctx.save();
-            ctx.lineWidth = outlineWidth;
-            ctx.strokeStyle = state.black;
-            ctx.fillStyle = state.black;
-            roundRectPath(ctx, x, y, size, size, 7);
-            if (mark.fill) ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = mark.fill ? "#fff" : state.black;
-            ctx.textAlign = "center";
-            ctx.font = `400 70px ${FONT_CURRENT_CHINESE}`;
-            ctx.fillText(mark.text, x + size / 2, y + 65, size - 5);
-            ctx.restore();
+            const x = outlineWidth / 2 + index * 100;
+            const y = outlineWidth / 2;
+            markerCtx.save();
+            markerCtx.lineWidth = outlineWidth;
+            markerCtx.strokeStyle = state.black;
+            markerCtx.fillStyle = state.black;
+            roundRectPath(markerCtx, x, y, size, size, 7);
+            if (mark.fill) markerCtx.fill();
+            markerCtx.stroke();
+            markerCtx.textAlign = "center";
+            markerCtx.font = `400 70px ${FONT_SIDE_CHINESE}`;
+            if (mark.fill) {
+                markerCtx.globalCompositeOperation = "destination-out";
+                markerCtx.fillText(mark.text, x + size / 2, y + 65, size - 5);
+            } else {
+                markerCtx.fillStyle = state.black;
+                markerCtx.fillText(mark.text, x + size / 2, y + 65, size - 5);
+            }
+            markerCtx.restore();
         });
+        ctx.drawImage(markerLayer, layerX, layerY);
     }
 
     function drawContent(ctx, data, frame) {
@@ -1292,8 +1749,15 @@
         ctx.restore();
     }
 
+    function getActiveFrame(boardType) {
+        if (activeTemplate === "fictional") {
+            return FICTIONAL_FRAMES[boardType] || FICTIONAL_FRAMES["RATIO-3-1"];
+        }
+        return FRAMES[boardType] || FRAMES["SE-6"];
+    }
+
     function renderToCanvas(target, data) {
-        const frame = FRAMES[data.board.type] || FRAMES["SE-6"];
+        const frame = getActiveFrame(data.board.type);
         const fullWidth = frame.width + frame.padding.left + frame.padding.right;
         const fullHeight = frame.height + frame.padding.top + frame.padding.bottom;
         target.width = fullWidth;
@@ -1336,7 +1800,7 @@
         renderToCanvas(output, state);
         output.toBlob(blob => {
             const link = document.createElement("a");
-            link.download = `JR风格中文站牌_${state.current.chinese}.png`;
+            link.download = `${TEMPLATES[activeTemplate].downloadName}_${state.current.chinese}.png`;
             link.href = URL.createObjectURL(blob);
             link.click();
             window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
@@ -1350,10 +1814,16 @@
         route: "线路颜色"
     };
 
+    function getInspectorTitle(key) {
+        if (key === "route" && activeTemplate === "fictional") return "车站颜色";
+        return INSPECTOR_META[key];
+    }
+
     function selectInspector(key) {
         if (!INSPECTOR_META[key]) return;
+        if (activeTemplate === "fictional" && key === "route") return;
         activeInspector = key;
-        inspectorTitle.textContent = INSPECTOR_META[key];
+        inspectorTitle.textContent = getInspectorTitle(key);
         document.querySelectorAll("[data-inspector-panel]").forEach(panel => {
             panel.hidden = panel.dataset.inspectorPanel !== key;
         });
@@ -1395,10 +1865,105 @@
     }
 
     function resetGenerator() {
-        state = defaultState();
+        state = defaultState(activeTemplate);
+        templateStates[activeTemplate] = state;
         syncBoundFields();
         updatePreview();
     }
+
+    function clearNumberingDropIndicators() {
+        form.querySelectorAll(".numbering-drop-before, .numbering-drop-after, .numbering-dragging").forEach(element => {
+            element.classList.remove("numbering-drop-before", "numbering-drop-after", "numbering-dragging");
+        });
+    }
+
+    function moveNumbering(path, sourceIndex, targetIndex) {
+        const list = getPath(path);
+        if (!Array.isArray(list)
+            || sourceIndex < 0
+            || sourceIndex >= list.length
+            || targetIndex < 0
+            || targetIndex >= list.length
+            || sourceIndex === targetIndex) return false;
+        const [moved] = list.splice(sourceIndex, 1);
+        list.splice(targetIndex, 0, moved);
+        renderNumberingLists();
+        updateVisibility();
+        schedulePreview();
+        return true;
+    }
+
+    function getNumberingDropIndex(event, container) {
+        const row = event.target.closest(".fictional-numbering-row");
+        if (!row || row.parentElement !== container) return getPath(container.dataset.numberingList).length;
+        const index = Number(row.dataset.numberingIndex);
+        return event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2
+            ? index + 1
+            : index;
+    }
+
+    form.addEventListener("dragstart", event => {
+        const handle = event.target.closest("[data-drag-numbering]");
+        const row = handle?.closest(".fictional-numbering-row");
+        if (!handle || !row || activeTemplate !== "fictional") return;
+        numberingDrag = {
+            path: row.dataset.numberingPath,
+            index: Number(row.dataset.numberingIndex)
+        };
+        row.classList.add("numbering-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", `${numberingDrag.path}:${numberingDrag.index}`);
+    });
+
+    form.addEventListener("dragover", event => {
+        const container = event.target.closest("[data-numbering-list]");
+        if (!numberingDrag || !container || container.dataset.numberingList !== numberingDrag.path) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        form.querySelectorAll(".numbering-drop-before, .numbering-drop-after").forEach(element => {
+            element.classList.remove("numbering-drop-before", "numbering-drop-after");
+        });
+        const row = event.target.closest(".fictional-numbering-row");
+        if (row && row.parentElement === container) {
+            const after = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+            row.classList.add(after ? "numbering-drop-after" : "numbering-drop-before");
+        }
+    });
+
+    form.addEventListener("drop", event => {
+        const container = event.target.closest("[data-numbering-list]");
+        if (!numberingDrag || !container || container.dataset.numberingList !== numberingDrag.path) return;
+        event.preventDefault();
+        const list = getPath(numberingDrag.path);
+        let targetIndex = getNumberingDropIndex(event, container);
+        const sourceIndex = numberingDrag.index;
+        if (targetIndex > sourceIndex) targetIndex -= 1;
+        targetIndex = Math.max(0, Math.min(targetIndex, list.length - 1));
+        numberingDrag = null;
+        clearNumberingDropIndicators();
+        moveNumbering(container.dataset.numberingList, sourceIndex, targetIndex);
+    });
+
+    form.addEventListener("dragend", () => {
+        numberingDrag = null;
+        clearNumberingDropIndicators();
+    });
+
+    form.addEventListener("keydown", event => {
+        const handle = event.target.closest("[data-drag-numbering]");
+        if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+        const row = handle.closest(".fictional-numbering-row");
+        const path = row.dataset.numberingPath;
+        const sourceIndex = Number(row.dataset.numberingIndex);
+        const targetIndex = sourceIndex + (event.key === "ArrowUp" ? -1 : 1);
+        event.preventDefault();
+        if (moveNumbering(path, sourceIndex, targetIndex)) {
+            window.requestAnimationFrame(() => {
+                const container = form.querySelector(`[data-numbering-list="${path}"]`);
+                container?.querySelectorAll("[data-drag-numbering]")[targetIndex]?.focus();
+            });
+        }
+    });
 
     form.addEventListener("input", event => {
         const target = event.target;
@@ -1430,15 +1995,16 @@
                 });
             }
             if (target.dataset.bind === "current.showTlc" && value && state.current.numberings.length === 0) {
-                state.current.numberings.push({ route: "", number: "", color: state.routeColors[0] || LINE_TWO_GREEN });
+                state.current.numberings.push(createNewNumbering(state.current.numberings));
                 renderNumberingLists();
             }
             if (target.dataset.bind === "showNumbering" && value && state.current.numberings.length === 0) {
-                state.current.numberings.push({ route: "", number: "", color: state.routeColors[0] || LINE_TWO_GREEN });
+                state.current.numberings.push(createNewNumbering(state.current.numberings));
                 renderNumberingLists();
             }
         } else if (target.dataset.listPath) {
-            getPath(target.dataset.listPath)[Number(target.dataset.listIndex)][target.dataset.listKey] = target.value;
+            const value = target.type === "checkbox" ? target.checked : target.value;
+            getPath(target.dataset.listPath)[Number(target.dataset.listIndex)][target.dataset.listKey] = value;
         } else if (target.dataset.markIndex !== undefined) {
             const value = target.type === "checkbox" ? target.checked : target.value;
             state.cityMarks[Number(target.dataset.markIndex)][target.dataset.markKey] = value;
@@ -1453,9 +2019,17 @@
         const button = event.target.closest("button");
         if (!button) return;
         if (button.dataset.addNumbering) {
-            const list = getPath(button.dataset.addNumbering);
-            if (list.length < 2) {
-                list.push({ route: "", number: "", color: state.routeColors[0] || LINE_TWO_GREEN });
+            const path = button.dataset.addNumbering;
+            const list = getPath(path);
+            if (list.length < getNumberingLimit(path)) {
+                list.push(createNewNumbering(list));
+                if (activeTemplate === "fictional"
+                    && path === "current.numberings"
+                    && list.length === 3
+                    && state.board.type === "RATIO-3-1") {
+                    state.board.type = "RATIO-4-1";
+                    syncBoundPeers("board.type", null);
+                }
                 renderDynamicControls();
                 updateVisibility();
                 schedulePreview();
@@ -1469,7 +2043,9 @@
             renderMarks();
             schedulePreview();
         } else if (button.dataset.removeRoute !== undefined) {
-            if (state.routeColors.length > 1) state.routeColors.splice(Number(button.dataset.removeRoute), 1);
+            if (activeTemplate !== "fictional" && state.routeColors.length > 1) {
+                state.routeColors.splice(Number(button.dataset.removeRoute), 1);
+            }
             renderRouteColors();
             schedulePreview();
         }
@@ -1482,12 +2058,23 @@
         schedulePreview();
     });
     document.getElementById("addRouteColorButton").addEventListener("click", () => {
+        if (activeTemplate === "fictional") return;
         if (state.routeColors.length < 4) state.routeColors.push(LINE_TWO_GREEN);
         renderRouteColors();
         schedulePreview();
     });
     document.getElementById("resetButton").addEventListener("click", resetGenerator);
     document.getElementById("downloadButton").addEventListener("click", downloadPng);
+    templateDrawerButton.addEventListener("click", () => {
+        closeColorEditors();
+        setTemplateDrawerOpen(true);
+    });
+    document.getElementById("templateDrawerCloseButton").addEventListener("click", () => setTemplateDrawerOpen(false));
+    document.getElementById("templateDrawerBackdrop").addEventListener("click", () => setTemplateDrawerOpen(false));
+    document.querySelector(".template-list").addEventListener("click", event => {
+        const option = event.target.closest("[data-template-id]");
+        if (option) switchTemplate(option.dataset.templateId);
+    });
 
     document.getElementById("hotspotLayer").addEventListener("click", event => {
         const button = event.target.closest(".canvas-hotspot");
@@ -1506,7 +2093,8 @@
     });
     document.addEventListener("keydown", event => {
         if (event.key !== "Escape") return;
-        if (document.querySelector(".color-editor.open")) closeColorEditors();
+        if (document.body.classList.contains("template-drawer-open")) setTemplateDrawerOpen(false);
+        else if (document.querySelector(".color-editor.open")) closeColorEditors();
         else if (!inspectorPinned) hideInspector();
     });
     window.addEventListener("resize", schedulePreview);
@@ -1515,6 +2103,8 @@
         else showInspector();
     });
 
+    syncBoardTypeOptions();
+    updateTemplateUi();
     syncBoundFields();
     applyInspectorPinState();
     selectInspector(activeInspector);
