@@ -51,7 +51,7 @@
         return value;
     }
 
-    function normalizeStationLineColors(station) {
+    function normalizeFictionalStationLineColors(station) {
         const fallback = normalizeFictionalColor(station.lineColor, LINE_TWO_GREEN);
         const source = Array.isArray(station.lineColors) ? station.lineColors : [fallback];
         const colors = source
@@ -59,7 +59,7 @@
             .filter(Boolean)
             .slice(0, MAX_SIDE_LINE_COLORS);
         station.lineColors = colors.length ? colors : [fallback];
-        station.lineColor = station.lineColors[0];
+        delete station.lineColor;
         return station.lineColors;
     }
 
@@ -71,7 +71,7 @@
 
     function enforceFictionalSideLineColorLimit(value, side) {
         const stations = side === "left" ? value.leftStations : value.rightStations;
-        stations.forEach(normalizeStationLineColors);
+        stations.forEach(normalizeFictionalStationLineColors);
         if (isSecondarySideLineActive(value, side)) {
             stations[1].lineColors = stations[1].lineColors.slice(0, MAX_SIDE_LINE_COLORS - 1);
             const mainLimit = MAX_SIDE_LINE_COLORS - stations[1].lineColors.length;
@@ -79,9 +79,6 @@
         } else {
             stations[0].lineColors = stations[0].lineColors.slice(0, MAX_SIDE_LINE_COLORS);
         }
-        stations.forEach(station => {
-            station.lineColor = station.lineColors[0];
-        });
     }
 
     function normalizeFictionalSideLineColors(value) {
@@ -106,7 +103,14 @@
             boardTypes: BOARD_OPTIONS.map(option => option.value),
             defaultBoardType: "SE-6",
             supportsTlc: true,
-            downloadName: "JR风格中文站牌"
+            downloadName: "JR风格中文站牌",
+            createDefaultState: createJrEastDefaultState,
+            migrateState: migrateJrEastState,
+            normalizeState: normalizeJrEastState,
+            applyStateTransition: applyJrEastStateTransition,
+            drawLineBands: drawJrEastTemplateLineBands,
+            getFrame: getJrEastFrame,
+            getStationLineColors: getJrEastStationLineColors
         },
         fictional: {
             name: "架空",
@@ -114,7 +118,15 @@
             boardTypes: ["RATIO-3-1", "RATIO-4-1", "RATIO-5-1", "RATIO-6-1"],
             defaultBoardType: "RATIO-3-1",
             supportsTlc: false,
-            downloadName: "架空风格中文站牌"
+            downloadName: "架空风格中文站牌",
+            createDefaultState: createFictionalDefaultState,
+            migrateState: migrateFictionalState,
+            normalizeState: normalizeFictionalState,
+            applyStateTransition: applyFictionalStateTransition,
+            afterNumberingAdded: afterFictionalNumberingAdded,
+            drawLineBands: drawFictionalTemplateLineBands,
+            getFrame: getFictionalFrame,
+            getStationLineColors: getFictionalStationLineColors
         }
     };
 
@@ -134,8 +146,8 @@
         "RATIO-6-1": { width: 3540, height: 540, padding: { top: 30, right: 30, bottom: 30, left: 30 } }
     };
 
-    const defaultState = (templateId = "jr-east") => {
-        const value = {
+    function createJrEastDefaultState() {
+        return {
             stateVersion: STATE_VERSION,
             board: { type: "SE-6", light: true },
             showNumbering: true,
@@ -181,10 +193,22 @@
             ],
             routeColors: [LINE_TWO_GREEN]
         };
-        if (templateId === "fictional") {
-            value.templateVersion = FICTIONAL_STATE_VERSION;
-            value.board.type = TEMPLATES.fictional.defaultBoardType;
-            value.current = {
+    }
+
+    function createFictionalDefaultState() {
+        const value = {
+            stateVersion: STATE_VERSION,
+            templateVersion: FICTIONAL_STATE_VERSION,
+            board: { type: "RATIO-3-1", light: true },
+            showNumbering: true,
+            showLanguages: true,
+            showCityMarks: true,
+            branchLeft: false,
+            branchRight: false,
+            spurLeft: false,
+            spurRight: false,
+            black: "#1A1A1A",
+            current: {
                 chinese: "唯亭",
                 zhuyin: "ㄨㄟˊ ㄊㄧㄥˊ",
                 english: "Weiting",
@@ -196,34 +220,39 @@
                     { route: "3", number: "37", color: SUZHOU_LINE_THREE_ORANGE },
                     { route: "11", number: "01", color: SUZHOU_LINE_ELEVEN_CHAMPAGNE }
                 ]
-            };
-            value.leftStations = [
+            },
+            leftStations: [
                 {
                     chinese: "戈巷街",
                     english: "Gexiangjie",
-                    lineColor: SUZHOU_LINE_THREE_ORANGE,
+                    lineColors: [SUZHOU_LINE_THREE_ORANGE],
                     go: false,
                     numberings: [{ route: "3", number: "36", color: SUZHOU_LINE_THREE_ORANGE }]
                 },
-                { chinese: "", english: "", lineColor: SUZHOU_LINE_THREE_ORANGE, go: false, numberings: [] }
-            ];
-            value.rightStations = [
+                { chinese: "", english: "", lineColors: [SUZHOU_LINE_THREE_ORANGE], go: false, numberings: [] }
+            ],
+            rightStations: [
                 {
                     chinese: "草鞋山",
                     english: "Caoxieshan",
-                    lineColor: SUZHOU_LINE_ELEVEN_CHAMPAGNE,
+                    lineColors: [SUZHOU_LINE_ELEVEN_CHAMPAGNE],
                     go: true,
                     numberings: [{ route: "11", number: "02", color: SUZHOU_LINE_ELEVEN_CHAMPAGNE }]
                 },
-                { chinese: "", english: "", lineColor: SUZHOU_LINE_ELEVEN_CHAMPAGNE, go: false, numberings: [] }
-            ];
-            value.cityMarks = [{ text: "苏", fill: true }];
-            value.routeColors = ["#FFFFFF"];
-            normalizeFictionalSideLineColors(value);
-            normalizeFictionalNumberingLists(value);
-        }
+                { chinese: "", english: "", lineColors: [SUZHOU_LINE_ELEVEN_CHAMPAGNE], go: false, numberings: [] }
+            ],
+            cityMarks: [{ text: "苏", fill: true }],
+            routeColors: ["#FFFFFF"]
+        };
+        normalizeFictionalSideLineColors(value);
+        normalizeFictionalNumberingLists(value);
         return value;
-    };
+    }
+
+    function defaultState(templateId = "jr-east") {
+        const template = TEMPLATES[templateId] || TEMPLATES["jr-east"];
+        return template.createDefaultState();
+    }
 
     const form = document.getElementById("generatorForm");
     const canvas = document.getElementById("signCanvas");
@@ -250,82 +279,121 @@
     let inspectorPinned = localStorage.getItem(SIDEBAR_PREFERENCE_KEY) !== "false";
     let numberingDrag = null;
 
-    function normalizeTemplateState(templateId, value) {
-        const template = TEMPLATES[templateId] || TEMPLATES["jr-east"];
-        if (!template.boardTypes.includes(value.board.type)) value.board.type = template.defaultBoardType;
-        if (!template.supportsTlc) {
-            value.templateVersion = FICTIONAL_STATE_VERSION;
-            value.current.showTlc = false;
-            value.black = normalizeFictionalColor(value.black, "#1A1A1A");
-            normalizeFictionalNumberingLists(value);
-            normalizeFictionalSideLineColors(value);
-            value.routeColors = [normalizeFictionalColor(value.routeColors[0], "#FFFFFF")];
+    function cloneStateForMigration(value) {
+        return {
+            ...value,
+            current: { ...(value.current || {}) },
+            leftStations: Array.isArray(value.leftStations)
+                ? value.leftStations.map(station => ({ ...station }))
+                : value.leftStations,
+            rightStations: Array.isArray(value.rightStations)
+                ? value.rightStations.map(station => ({ ...station }))
+                : value.rightStations,
+            cityMarks: Array.isArray(value.cityMarks)
+                ? value.cityMarks.map(mark => ({ ...mark }))
+                : value.cityMarks
+        };
+    }
+
+    function migrateJrEastState(value, fallback) {
+        const migrated = cloneStateForMigration(value);
+        if ((Number(value.stateVersion) || 0) < STATE_VERSION
+            && migrated.cityMarks?.length === 1
+            && migrated.cityMarks[0].text === "沪"
+            && migrated.cityMarks[0].fill === false) {
+            migrated.cityMarks[0].fill = true;
         }
+        if (migrated.leftStations?.[0]?.english === "West Nanjing Road") {
+            migrated.leftStations[0].english = fallback.leftStations[0].english;
+        }
+        if (migrated.rightStations?.[0]?.english === "East Nanjing Road") {
+            migrated.rightStations[0].english = fallback.rightStations[0].english;
+        }
+        return migrated;
+    }
+
+    function migrateFictionalState(value, fallback) {
+        const migrated = cloneStateForMigration(value);
+        const storedVersion = Number(value.templateVersion) || 0;
+        if (storedVersion < 2) migrated.routeColors = fallback.routeColors;
+        if (storedVersion < FICTIONAL_STATE_VERSION && value.current?.chinese === "人民广场") {
+            migrated.current = fallback.current;
+            migrated.leftStations = fallback.leftStations;
+            migrated.rightStations = fallback.rightStations;
+            migrated.cityMarks = fallback.cityMarks;
+        } else if (storedVersion < FICTIONAL_STATE_VERSION
+            && value.current?.chinese === "唯亭"
+            && value.current?.zhuyin === "Wéitíng") {
+            migrated.current.zhuyin = fallback.current.zhuyin;
+        }
+        [
+            ...(Array.isArray(migrated.leftStations) ? migrated.leftStations : []),
+            ...(Array.isArray(migrated.rightStations) ? migrated.rightStations : [])
+        ].forEach(normalizeFictionalStationLineColors);
+        return migrated;
+    }
+
+    function normalizeJrEastState(value) {
+        const template = TEMPLATES["jr-east"];
+        if (!template.boardTypes.includes(value.board.type)) value.board.type = template.defaultBoardType;
         return value;
     }
 
+    function normalizeFictionalState(value) {
+        const template = TEMPLATES.fictional;
+        if (!template.boardTypes.includes(value.board.type)) value.board.type = template.defaultBoardType;
+        value.templateVersion = FICTIONAL_STATE_VERSION;
+        value.current.showTlc = false;
+        value.black = normalizeFictionalColor(value.black, "#1A1A1A");
+        normalizeFictionalNumberingLists(value);
+        normalizeFictionalSideLineColors(value);
+        value.routeColors = [normalizeFictionalColor(value.routeColors[0], "#FFFFFF")];
+        return value;
+    }
+
+    function normalizeTemplateState(templateId, value) {
+        const template = TEMPLATES[templateId] || TEMPLATES["jr-east"];
+        return template.normalizeState(value);
+    }
+
     function mergeState(value, templateId = "jr-east") {
-        const fallback = defaultState(templateId);
+        const template = TEMPLATES[templateId] || TEMPLATES["jr-east"];
+        const fallback = template.createDefaultState();
         if (!value || typeof value !== "object") return fallback;
-        const storedFictionalVersion = Number(value.templateVersion) || 0;
-        const migrateFictionalColors = templateId === "fictional"
-            && storedFictionalVersion < 2;
-        const migrateCopiedFictionalDefaults = templateId === "fictional"
-            && storedFictionalVersion < FICTIONAL_STATE_VERSION
-            && value.current?.chinese === "人民广场";
-        const migrateWeitingZhuyin = templateId === "fictional"
-            && storedFictionalVersion < FICTIONAL_STATE_VERSION
-            && value.current?.chinese === "唯亭"
-            && value.current?.zhuyin === "Wéitíng";
-        const legacyVisibility = typeof value.showMultilingual === "boolean" ? value.showMultilingual : true;
-        const cityMarks = Array.isArray(value.cityMarks)
-            ? value.cityMarks.map(mark => ({ ...mark }))
+        const migrated = template.migrateState(value, fallback);
+        const legacyVisibility = typeof migrated.showMultilingual === "boolean" ? migrated.showMultilingual : true;
+        const cityMarks = Array.isArray(migrated.cityMarks)
+            ? migrated.cityMarks.map(mark => ({ ...mark }))
             : fallback.cityMarks;
-        if ((Number(value.stateVersion) || 0) < STATE_VERSION
-            && cityMarks.length === 1
-            && cityMarks[0].text === "沪"
-            && cityMarks[0].fill === false) {
-            cityMarks[0].fill = true;
-        }
         const merged = {
             ...fallback,
-            ...value,
+            ...migrated,
             stateVersion: STATE_VERSION,
-            showNumbering: typeof value.showNumbering === "boolean" ? value.showNumbering : legacyVisibility,
-            showLanguages: typeof value.showLanguages === "boolean" ? value.showLanguages : legacyVisibility,
-            showCityMarks: typeof value.showCityMarks === "boolean" ? value.showCityMarks : true,
-            board: { ...fallback.board, ...(value.board || {}) },
-            current: { ...fallback.current, ...(value.current || {}) },
+            showNumbering: typeof migrated.showNumbering === "boolean" ? migrated.showNumbering : legacyVisibility,
+            showLanguages: typeof migrated.showLanguages === "boolean" ? migrated.showLanguages : legacyVisibility,
+            showCityMarks: typeof migrated.showCityMarks === "boolean" ? migrated.showCityMarks : true,
+            board: { ...fallback.board, ...(migrated.board || {}) },
+            current: { ...fallback.current, ...(migrated.current || {}) },
             leftStations: fallback.leftStations.map((station, index) => ({
                 ...station,
-                ...(value.leftStations?.[index] || {}),
-                english: index === 0 && value.leftStations?.[index]?.english === "West Nanjing Road"
-                    ? station.english
-                    : (value.leftStations?.[index]?.english ?? station.english),
-                numberings: Array.isArray(value.leftStations?.[index]?.numberings) ? value.leftStations[index].numberings : station.numberings
+                ...(migrated.leftStations?.[index] || {}),
+                numberings: Array.isArray(migrated.leftStations?.[index]?.numberings)
+                    ? migrated.leftStations[index].numberings
+                    : station.numberings
             })),
             rightStations: fallback.rightStations.map((station, index) => ({
                 ...station,
-                ...(value.rightStations?.[index] || {}),
-                english: index === 0 && value.rightStations?.[index]?.english === "East Nanjing Road"
-                    ? station.english
-                    : (value.rightStations?.[index]?.english ?? station.english),
-                numberings: Array.isArray(value.rightStations?.[index]?.numberings) ? value.rightStations[index].numberings : station.numberings
+                ...(migrated.rightStations?.[index] || {}),
+                numberings: Array.isArray(migrated.rightStations?.[index]?.numberings)
+                    ? migrated.rightStations[index].numberings
+                    : station.numberings
             })),
             cityMarks,
-            routeColors: migrateFictionalColors
-                ? fallback.routeColors
-                : (Array.isArray(value.routeColors) && value.routeColors.length ? value.routeColors : fallback.routeColors)
+            routeColors: Array.isArray(migrated.routeColors) && migrated.routeColors.length
+                ? migrated.routeColors
+                : fallback.routeColors
         };
-        if (migrateCopiedFictionalDefaults) {
-            merged.current = fallback.current;
-            merged.leftStations = fallback.leftStations;
-            merged.rightStations = fallback.rightStations;
-            merged.cityMarks = fallback.cityMarks;
-        } else if (migrateWeitingZhuyin) {
-            merged.current.zhuyin = fallback.current.zhuyin;
-        }
-        return normalizeTemplateState(templateId, merged);
+        return template.normalizeState(merged);
     }
 
     function loadInitialState(storageKey, legacyStorageKey, templateId) {
@@ -416,10 +484,6 @@
                 control.disabled = !fictional;
             });
         });
-        document.querySelectorAll("[data-color-transparent-action]").forEach(button => {
-            button.hidden = false;
-            button.disabled = false;
-        });
         const routeHotspot = document.querySelector('[data-inspector="route"]');
         routeHotspot.hidden = fictional;
         routeHotspot.disabled = fictional;
@@ -442,7 +506,6 @@
         saveState();
         activeTemplate = templateId;
         state = normalizeTemplateState(templateId, templateStates[templateId]);
-        getIccTransform().catch(error => console.error("ICC 色彩转换初始化失败。", error));
         syncBoardTypeOptions();
         updateTemplateUi();
         syncBoundFields();
@@ -1019,29 +1082,63 @@
         updateVisibility();
     }
 
+    const CONDITIONAL_SECTION_SELECTOR = [
+        "[data-language-section]",
+        "[data-numbering-section]",
+        "[data-tlc-section]",
+        "[data-mark-section]",
+        "[data-branch-section]",
+        "[data-station-numberings]"
+    ].join(",");
+
+    function setConditionalSectionVisible(element, visible) {
+        element.hidden = !visible;
+    }
+
+    function syncConditionalRequiredControls() {
+        document.querySelectorAll("[required]").forEach(control => {
+            let parent = control.parentElement;
+            let managedByCondition = false;
+            let hiddenByCondition = false;
+            while (parent && parent !== form) {
+                if (parent.matches(CONDITIONAL_SECTION_SELECTOR)) {
+                    managedByCondition = true;
+                    if (parent.hidden) {
+                        hiddenByCondition = true;
+                        break;
+                    }
+                }
+                parent = parent.parentElement;
+            }
+            if (managedByCondition) control.disabled = hiddenByCondition;
+        });
+    }
+
     function updateVisibility() {
         document.querySelectorAll("[data-language-section]").forEach(element => {
-            element.hidden = !state.showLanguages;
+            setConditionalSectionVisible(element, state.showLanguages);
         });
         document.querySelectorAll("[data-numbering-section]").forEach(element => {
-            element.hidden = !state.showNumbering;
+            setConditionalSectionVisible(element, state.showNumbering);
         });
         document.querySelectorAll("[data-tlc-section]").forEach(element => {
-            element.hidden = !state.current.showTlc;
+            setConditionalSectionVisible(element, state.current.showTlc);
         });
         document.querySelectorAll("[data-mark-section]").forEach(element => {
-            element.hidden = !state.showCityMarks;
+            setConditionalSectionVisible(element, state.showCityMarks);
         });
         document.querySelectorAll("[data-branch-section]").forEach(element => {
             const side = element.dataset.branchSection;
-            element.hidden = side === "left"
-                ? !(state.branchLeft || state.spurLeft)
-                : !(state.branchRight || state.spurRight);
+            const visible = side === "left"
+                ? state.branchLeft || state.spurLeft
+                : state.branchRight || state.spurRight;
+            setConditionalSectionVisible(element, visible);
         });
         document.querySelectorAll("[data-station-numberings]").forEach(element => {
             const station = getPath(element.dataset.stationNumberings);
-            element.hidden = !state.showNumbering || !station.go;
+            setConditionalSectionVisible(element, state.showNumbering && station.go);
         });
+        syncConditionalRequiredControls();
     }
 
     function createButton(label, className, attributes = {}) {
@@ -1067,6 +1164,86 @@
         return activeTemplate === "fictional"
             ? normalizeFictionalNumberingStyle(numbering, state.black)
             : numbering;
+    }
+
+    function createStateTransitionEffects() {
+        return {
+            syncPaths: [],
+            renderNumberings: false,
+            renderSideLineColors: false
+        };
+    }
+
+    function applyExclusiveSideLayoutRule(data, path, value, effects) {
+        const exclusivePath = {
+            branchLeft: "spurLeft",
+            spurLeft: "branchLeft",
+            branchRight: "spurRight",
+            spurRight: "branchRight"
+        }[path];
+        if (!exclusivePath || !value) return;
+        data[exclusivePath] = false;
+        effects.syncPaths.push(exclusivePath);
+    }
+
+    function disableSpurIncompatibleFeatures(data, path, value, effects) {
+        if (!value || (path !== "spurLeft" && path !== "spurRight")) return;
+        data.showNumbering = false;
+        data.showCityMarks = false;
+        data.current.showTlc = false;
+        data.showLanguages = false;
+        effects.syncPaths.push("showNumbering", "showCityMarks", "current.showTlc", "showLanguages");
+    }
+
+    function ensureCurrentNumbering(data, path, value, effects) {
+        if (!value || data.current.numberings.length) return;
+        if (path !== "showNumbering" && path !== "current.showTlc") return;
+        data.current.numberings.push(createNewNumbering(data.current.numberings));
+        effects.renderNumberings = true;
+    }
+
+    function applyJrEastStateTransition(data, path, value) {
+        const effects = createStateTransitionEffects();
+        applyExclusiveSideLayoutRule(data, path, value, effects);
+        disableSpurIncompatibleFeatures(data, path, value, effects);
+        ensureCurrentNumbering(data, path, value, effects);
+        return effects;
+    }
+
+    function applyFictionalStateTransition(data, path, value) {
+        const effects = createStateTransitionEffects();
+        applyExclusiveSideLayoutRule(data, path, value, effects);
+        const side = {
+            branchLeft: "left",
+            spurLeft: "left",
+            branchRight: "right",
+            spurRight: "right"
+        }[path];
+        if (side) {
+            enforceFictionalSideLineColorLimit(data, side);
+            effects.renderSideLineColors = true;
+        }
+        disableSpurIncompatibleFeatures(data, path, value, effects);
+        ensureCurrentNumbering(data, path, value, effects);
+        return effects;
+    }
+
+    function applyTemplateStateTransition(path, value) {
+        const effects = TEMPLATES[activeTemplate].applyStateTransition(state, path, value);
+        effects.syncPaths.forEach(changedPath => syncBoundPeers(changedPath, null));
+        if (effects.renderSideLineColors) renderFictionalSideLineColors();
+        if (effects.renderNumberings) renderNumberingLists();
+    }
+
+    function afterFictionalNumberingAdded(data, path, list) {
+        if (path !== "current.numberings" || list.length !== 3 || data.board.type !== "RATIO-3-1") return [];
+        data.board.type = "RATIO-4-1";
+        return ["board.type"];
+    }
+
+    function applyNumberingAddedRule(path, list) {
+        (TEMPLATES[activeTemplate].afterNumberingAdded?.(state, path, list) || [])
+            .forEach(changedPath => syncBoundPeers(changedPath, null));
     }
 
     function updateNumberingAddButtons() {
@@ -1212,7 +1389,7 @@
         const stationCount = isSecondarySideLineActive(state, side) ? 2 : 1;
         return stations
             .slice(0, stationCount)
-            .reduce((total, station) => total + normalizeStationLineColors(station).length, 0);
+            .reduce((total, station) => total + normalizeFictionalStationLineColors(station).length, 0);
     }
 
     function canAddSideLineColor(path) {
@@ -1234,7 +1411,7 @@
             if (activeTemplate !== "fictional") return;
             const path = container.dataset.sideLineColorList;
             const station = getPath(path);
-            normalizeStationLineColors(station).forEach((color, index) => {
+            normalizeFictionalStationLineColors(station).forEach((color, index) => {
                 const row = document.createElement("div");
                 row.className = "repeat-row side-line-color-row";
 
@@ -1595,11 +1772,18 @@
         ctx.closePath();
     }
 
-    function getStationLineColorsForDrawing(station) {
-        if (activeTemplate === "fictional" && Array.isArray(station.lineColors) && station.lineColors.length) {
-            return station.lineColors;
-        }
+    function getJrEastStationLineColors(station) {
         return [station.lineColor];
+    }
+
+    function getFictionalStationLineColors(station) {
+        return Array.isArray(station.lineColors) && station.lineColors.length
+            ? station.lineColors
+            : [LINE_TWO_GREEN];
+    }
+
+    function getStationLineColorsForDrawing(station) {
+        return TEMPLATES[activeTemplate].getStationLineColors(station);
     }
 
     function fillColorRect(ctx, color, x, y, width, height) {
@@ -1708,35 +1892,13 @@
         });
     }
 
-    function fillDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, align) {
+    function fillFictionalDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, align) {
         const isRight = align === "right";
         const direction = isRight ? 1 : -1;
         const start = isRight ? width - branchStart : branchStart;
         const stations = isRight ? data.rightStations : data.leftStations;
-        const fictional = activeTemplate === "fictional";
-        if (fictional) {
-            fillMiteredBranchColorBands(ctx, stations[0], start, direction, lineTop, 50, lineTop - 65, 77);
-            fillMiteredBranchColorBands(ctx, stations[1], start, direction, lineY, 50, lineBottom - 12, 77);
-            return;
-        }
-        const upperTrunkInner = { x: start + direction * 60, y: lineY };
-        const lowerTrunkOuter = { x: start + direction * 60, y: lineY };
-        fillBentLineColorBands(
-            ctx,
-            stations[0],
-            { x: start, y: lineTop },
-            { x: start + direction * 65, y: lineTop - 65 },
-            { x: start + direction * 100, y: lineTop + 12 },
-            upperTrunkInner
-        );
-        fillBentLineColorBands(
-            ctx,
-            stations[1],
-            lowerTrunkOuter,
-            { x: start + direction * 100, y: lineBottom - 12 },
-            { x: start + direction * 65, y: lineBottom + 65 },
-            { x: start, y: lineBottom }
-        );
+        fillMiteredBranchColorBands(ctx, stations[0], start, direction, lineTop, 50, lineTop - 65, 77);
+        fillMiteredBranchColorBands(ctx, stations[1], start, direction, lineY, 50, lineBottom - 12, 77);
     }
 
     function fillSpurLineColorBands(ctx, data, width, lineTop, branchStart, align) {
@@ -1764,7 +1926,8 @@
         ctx.restore();
     }
 
-    function drawJrLineBands(ctx, data, width, lineTop, lineBottom, lineY, half, branchStart) {
+    function drawJrEastTemplateLineBands(ctx, data, width, geometry) {
+        const { lineTop, lineBottom, lineY, half, branchStart } = geometry;
         ctx.save();
         createBandPath(ctx, data, width, lineTop, lineBottom, lineY, branchStart);
         ctx.clip();
@@ -1802,51 +1965,36 @@
         }
     }
 
-    function drawLineBands(ctx, data, width, height) {
-        const half = width / 2;
-        const lineY = height / 2 + 80;
-        const lineHeight = 100;
-        const lineTop = lineY - lineHeight / 2;
-        const lineBottom = lineY + lineHeight / 2;
-        const fictionalDoubleBranch = activeTemplate === "fictional";
+    function drawFictionalTemplateLineBands(ctx, data, width, geometry) {
+        const { half, lineY, lineTop, lineBottom, lineHeight, branchStart } = geometry;
         const branchBandHeight = 65 + 12;
         const upperBranchTop = lineTop - 65;
         const lowerBranchTop = lineBottom - 12;
-        const branchStart = Math.min(620, half - lineHeight);
-
-        if (activeTemplate !== "fictional") {
-            drawJrLineBands(ctx, data, width, lineTop, lineBottom, lineY, half, branchStart);
-            return { half, lineY, lineTop, lineBottom, branchStart, height };
-        }
 
         ctx.save();
         createBandPath(ctx, data, width, lineTop, lineBottom, lineY, branchStart);
         ctx.clip();
         if (data.branchRight) {
-            const branchStraightStart = fictionalDoubleBranch ? width - branchStart + 65 : half;
+            const branchStraightStart = width - branchStart + 65;
             fillStationLineColorBands(ctx, data.rightStations[0], branchStraightStart, upperBranchTop, width - branchStraightStart, branchBandHeight);
             fillStationLineColorBands(ctx, data.rightStations[1], branchStraightStart, lowerBranchTop, width - branchStraightStart, branchBandHeight);
-            if (activeTemplate === "fictional") {
-                fillMergedBranchTrunkColors(ctx, data, width, lineTop, lineBottom, branchStart, "right");
-            }
+            fillMergedBranchTrunkColors(ctx, data, width, lineTop, lineBottom, branchStart, "right");
         } else {
             fillStationLineColorBands(ctx, data.rightStations[0], half, lineTop, half, lineHeight);
         }
         if (data.branchLeft) {
-            const branchStraightWidth = fictionalDoubleBranch ? branchStart - 65 : half;
+            const branchStraightWidth = branchStart - 65;
             fillStationLineColorBands(ctx, data.leftStations[0], 0, upperBranchTop, branchStraightWidth, branchBandHeight);
             fillStationLineColorBands(ctx, data.leftStations[1], 0, lowerBranchTop, branchStraightWidth, branchBandHeight);
-            if (activeTemplate === "fictional") {
-                fillMergedBranchTrunkColors(ctx, data, width, lineTop, lineBottom, branchStart, "left");
-            }
+            fillMergedBranchTrunkColors(ctx, data, width, lineTop, lineBottom, branchStart, "left");
         } else {
             fillStationLineColorBands(ctx, data.leftStations[0], 0, lineTop, half, lineHeight);
         }
         if (data.branchRight) {
-            fillDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, "right");
+            fillFictionalDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, "right");
         }
         if (data.branchLeft) {
-            fillDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, "left");
+            fillFictionalDoubleBranchConnectorColors(ctx, data, width, lineTop, lineBottom, lineY, branchStart, "left");
         }
         const colorHeight = lineHeight / data.routeColors.length;
         data.routeColors.forEach((color, index) => {
@@ -1859,7 +2007,23 @@
         if (getSideLayout(data, "right") === "spur") {
             fillSpurLineColorBands(ctx, data, width, lineTop, branchStart, "right");
         }
-        return { half, lineY, lineTop, lineBottom, branchStart, height };
+    }
+
+    function drawLineBands(ctx, data, width, height) {
+        const half = width / 2;
+        const lineY = height / 2 + 80;
+        const lineHeight = 100;
+        const geometry = {
+            half,
+            lineY,
+            lineHeight,
+            lineTop: lineY - lineHeight / 2,
+            lineBottom: lineY + lineHeight / 2,
+            branchStart: Math.min(620, half - lineHeight),
+            height
+        };
+        TEMPLATES[activeTemplate].drawLineBands(ctx, data, width, geometry);
+        return geometry;
     }
 
     function fitText(ctx, text, maxWidth, startSize, minSize, font, weight = "600") {
@@ -2299,11 +2463,16 @@
         ctx.restore();
     }
 
-    function getActiveFrame(boardType) {
-        if (activeTemplate === "fictional") {
-            return FICTIONAL_FRAMES[boardType] || FICTIONAL_FRAMES["RATIO-3-1"];
-        }
+    function getJrEastFrame(boardType) {
         return FRAMES[boardType] || FRAMES["SE-6"];
+    }
+
+    function getFictionalFrame(boardType) {
+        return FICTIONAL_FRAMES[boardType] || FICTIONAL_FRAMES["RATIO-3-1"];
+    }
+
+    function getActiveFrame(boardType) {
+        return TEMPLATES[activeTemplate].getFrame(boardType);
     }
 
     function renderToCanvas(target, data) {
@@ -2365,7 +2534,6 @@
     };
 
     function getInspectorTitle(key) {
-        if (key === "route" && activeTemplate === "fictional") return "车站颜色";
         return INSPECTOR_META[key];
     }
 
@@ -2527,43 +2695,7 @@
             }
             setPath(target.dataset.bind, value);
             syncBoundPeers(target.dataset.bind, target);
-            const exclusiveBranch = {
-                branchLeft: "spurLeft",
-                spurLeft: "branchLeft",
-                branchRight: "spurRight",
-                spurRight: "branchRight"
-            }[target.dataset.bind];
-            if (exclusiveBranch && value) {
-                state[exclusiveBranch] = false;
-                syncBoundPeers(exclusiveBranch, null);
-            }
-            const sideLayout = {
-                branchLeft: "left",
-                spurLeft: "left",
-                branchRight: "right",
-                spurRight: "right"
-            }[target.dataset.bind];
-            if (activeTemplate === "fictional" && sideLayout) {
-                enforceFictionalSideLineColorLimit(state, sideLayout);
-                renderFictionalSideLineColors();
-            }
-            if ((target.dataset.bind === "spurLeft" || target.dataset.bind === "spurRight") && value) {
-                state.showNumbering = false;
-                state.showCityMarks = false;
-                state.current.showTlc = false;
-                state.showLanguages = false;
-                ["showNumbering", "showCityMarks", "current.showTlc", "showLanguages"].forEach(path => {
-                    syncBoundPeers(path, null);
-                });
-            }
-            if (target.dataset.bind === "current.showTlc" && value && state.current.numberings.length === 0) {
-                state.current.numberings.push(createNewNumbering(state.current.numberings));
-                renderNumberingLists();
-            }
-            if (target.dataset.bind === "showNumbering" && value && state.current.numberings.length === 0) {
-                state.current.numberings.push(createNewNumbering(state.current.numberings));
-                renderNumberingLists();
-            }
+            applyTemplateStateTransition(target.dataset.bind, value);
         } else if (target.dataset.listPath) {
             const value = target.type === "checkbox"
                 ? target.checked
@@ -2572,7 +2704,6 @@
         } else if (target.dataset.sideLineColorPath) {
             const station = getPath(target.dataset.sideLineColorPath);
             station.lineColors[Number(target.dataset.sideLineColorIndex)] = getColorInputValue(target);
-            station.lineColor = station.lineColors[0];
         } else if (target.dataset.markIndex !== undefined) {
             const value = target.type === "checkbox" ? target.checked : target.value;
             state.cityMarks[Number(target.dataset.markIndex)][target.dataset.markKey] = value;
@@ -2591,13 +2722,7 @@
             const list = getPath(path);
             if (list.length < getNumberingLimit(path)) {
                 list.push(createNewNumbering(list));
-                if (activeTemplate === "fictional"
-                    && path === "current.numberings"
-                    && list.length === 3
-                    && state.board.type === "RATIO-3-1") {
-                    state.board.type = "RATIO-4-1";
-                    syncBoundPeers("board.type", null);
-                }
+                applyNumberingAddedRule(path, list);
                 renderDynamicControls();
                 updateVisibility();
                 schedulePreview();
@@ -2611,7 +2736,6 @@
             if (canAddSideLineColor(path)) {
                 const station = getPath(path);
                 station.lineColors.push(LINE_TWO_GREEN);
-                station.lineColor = station.lineColors[0];
                 renderFictionalSideLineColors();
                 schedulePreview();
             }
@@ -2619,7 +2743,6 @@
             const station = getPath(button.dataset.removeSideLineColor);
             if (activeTemplate === "fictional" && station.lineColors.length > 1) {
                 station.lineColors.splice(Number(button.dataset.removeSideLineColorIndex), 1);
-                station.lineColor = station.lineColors[0];
                 renderFictionalSideLineColors();
                 schedulePreview();
             }
@@ -2688,7 +2811,6 @@
         else showInspector();
     });
 
-    getIccTransform().catch(error => console.error("ICC 色彩转换初始化失败。", error));
     syncBoardTypeOptions();
     updateTemplateUi();
     syncBoundFields();
